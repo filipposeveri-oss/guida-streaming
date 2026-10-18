@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ["public/index.html", "src/**"]
+    paths: ["public/index.html", "src/**", ".github/workflows/**"]
 
 permissions:
   contents: write
@@ -25,6 +25,8 @@ jobs:
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v5
         with:
@@ -38,12 +40,17 @@ jobs:
         run: node src/sync.js
 
       - name: Salva la cache dei voti nel repository
+        # Se il salvataggio non riesce, il sito viene pubblicato lo stesso
+        continue-on-error: true
         run: |
           git config user.name "guida-streaming-bot"
           git config user.email "actions@users.noreply.github.com"
           git add data/ratings.json
-          git diff --cached --quiet || git commit -m "Aggiorna cache voti $(date -u +%F)"
-          git push
+          if git diff --cached --quiet; then echo "Cache invariata"; exit 0; fi
+          git commit -m "Aggiorna cache voti $(date -u +%F)"
+          git fetch origin main
+          git rebase origin/main
+          git push origin HEAD:main
 
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
