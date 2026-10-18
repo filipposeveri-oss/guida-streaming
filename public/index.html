@@ -83,7 +83,7 @@ section.group h2 .n{font:500 12px var(--f-mono);color:var(--muted)}
 .sc small{font:600 9px var(--f-body);letter-spacing:.04em;opacity:.85}
 .provs{display:flex;gap:3px}
 .provs img{width:16px;height:16px;border-radius:4px}
-.more{margin-top:14px}
+.more{margin-top:14px;gap:10px}
 .empty{padding-block:48px;max-width:62ch}
 .empty h2{font:700 26px/1.15 var(--f-display);margin:0 0 10px;text-wrap:balance}
 .empty ol{padding-left:20px;display:grid;gap:6px}
@@ -156,7 +156,8 @@ dialog::backdrop{background:rgb(0 0 0 / .5)}
 "use strict";
 const IMG='https://image.tmdb.org/t/p/';
 const S={data:null,items:[],prov:new Map(),cats:[],sel:new Set(),type:'all',cat:'all',group:'platform',sort:'pop',
-  minImdb:0,q:'',showAll:new Set()};
+  minImdb:0,q:'',shown:new Map(),byKey:new Map(),trame:new Map()};
+const STEP=12, MORE=48, SHARDS=64;
 const store={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch{return d}},
              set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch{}}};
 const $=s=>document.querySelector(s);
@@ -168,10 +169,10 @@ async function load(){
     const r=await fetch('data.json',{cache:'no-cache'});
     if(r.status===503){$('#status').textContent='Primo aggiornamento dei cataloghi in corso. Ricarica la pagina tra qualche minuto.';return}
     if(!r.ok) throw new Error();
-    const d=await r.json(); S.data=d; S.items=d.items; S.cats=d.categories;
+    const d=await r.json(); S.data=d; S.items=d.items.map(it=>{it.ty=it.ty==='m'?'movie':it.ty==='t'?'tv':it.ty;it.k=it.ty+':'+it.id;S.byKey.set(it.k,it);return it}); S.cats=d.categories;
     d.providers.forEach(p=>S.prov.set(p.id,p));
     const saved=store.get('gs:sel',null);
-    S.sel=new Set((saved||d.providers.slice(0,6).map(p=>p.id)).filter(id=>S.prov.has(id)));
+    S.sel=new Set((saved||d.providers.map(p=>p.id)).filter(id=>S.prov.has(id)));
     if(!S.sel.size) d.providers.forEach(p=>S.sel.add(p.id));
     const when=new Date(d.generatedAt);
     $('#sub').textContent=`Cataloghi italiani di film e serie con i voti di IMDb e Rotten Tomatoes · aggiornato ${when.toLocaleDateString('it-IT',{day:'numeric',month:'long'})} alle ${when.toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})}`;
@@ -219,12 +220,11 @@ function render(){
   } else {
     for(const c of S.cats){if(S.cat!=='all'&&c.id!==S.cat)continue;const g=arr.filter(it=>it.c.includes(c.id));if(g.length)groups.push({id:'c'+c.id,title:c.name,items:g})}
   }
-  const LIMIT=12;
   $('#main').innerHTML=groups.length?groups.map(g=>{
-    const all=S.showAll.has(g.id), shown=all?g.items:g.items.slice(0,LIMIT);
-    return `<section class="group"><h2>${g.logo?`<img src="${IMG}w92${g.logo}" alt="">`:''}${esc(g.title)} <span class="n">${fmtInt(g.items.length)} titoli</span></h2>
+    const n=S.shown.get(g.id)||STEP, shown=g.items.slice(0,n);
+    return `<section class="group" data-group="${g.id}"><h2>${g.logo?`<img src="${IMG}w92${g.logo}" alt="">`:''}${esc(g.title)} <span class="n">${fmtInt(g.items.length)} titoli</span></h2>
       <div class="grid">${shown.map(cardHTML).join('')}</div>
-      ${g.items.length>LIMIT?`<button class="btn more" type="button" data-toggle="${g.id}">${all?'Mostra meno':'Mostra tutti ('+fmtInt(g.items.length)+')'}</button>`:''}</section>`}).join('')
+      <div class="row more">${g.items.length>n?`<button class="btn" type="button" data-more="${g.id}">Mostra altri ${fmtInt(Math.min(MORE,g.items.length-n))}</button>`:''}${n>STEP?`<button class="btn" type="button" data-less="${g.id}">Riduci</button>`:''}<span class="y">${fmtInt(shown.length)} di ${fmtInt(g.items.length)}</span></div></section>`}).join('')
     :`<div class="empty"><h2>Nessun titolo con questi filtri</h2><p>Prova ad aggiungere piattaforme, cambiare categoria o abbassare il voto minimo.</p></div>`;
   $('#status').textContent=`${fmtInt(arr.length)} titoli`;
 }
@@ -246,7 +246,7 @@ function openDetail(it){
       ${it.iv?`<div class="meta">${fmtInt(it.iv)} voti su IMDb</div>`:''}
     </div></div>
     <div class="meta"><b>Su:</b> ${esc(provs)||'—'}<br><b>Categorie:</b> ${esc(cats)||'—'}</div>
-    <p style="margin:0;max-width:65ch">${esc(it.ov)||'<span class="meta">Trama non disponibile in italiano.</span>'}</p>
+    <p style="margin:0;max-width:65ch" id="trama"><span class="meta">Carico la trama…</span></p>
     <div class="links">
       <a href="https://www.themoviedb.org/${it.ty}/${it.id}/watch?locale=IT" target="_blank" rel="noopener">Dove guardarlo</a>
       ${it.ii?`<a href="https://www.imdb.com/title/${it.ii}/" target="_blank" rel="noopener">IMDb</a>`:''}
@@ -254,22 +254,29 @@ function openDetail(it){
     </div>
     <div class="actions"><button class="btn" type="button" data-close>Chiudi</button></div>`;
   $('#detail').showModal();
+  loadTrama(it).then(t=>{const el=$('#trama');if(el)el.innerHTML=t?esc(t):'<span class="meta">Trama non disponibile in italiano.</span>'});
+}
+async function loadTrama(it){
+  const n=it.id%SHARDS;
+  if(!S.trame.has(n)) S.trame.set(n,fetch(`trame/${n}.json`).then(r=>r.ok?r.json():{}).catch(()=>({})));
+  return (await S.trame.get(n))[it.k];
 }
 
 document.addEventListener('click',e=>{
   const t=e.target.closest('button'); if(!t) return;
-  if(t.dataset.prov){const id=+t.dataset.prov;S.sel.has(id)?S.sel.delete(id):S.sel.add(id);store.set('gs:sel',[...S.sel]);renderChips();render()}
-  else if(t.dataset.cat){S.cat=t.dataset.cat;renderChips();render()}
-  else if(t.dataset.toggle){S.showAll.has(t.dataset.toggle)?S.showAll.delete(t.dataset.toggle):S.showAll.add(t.dataset.toggle);render()}
+  if(t.dataset.prov){const id=+t.dataset.prov;S.sel.has(id)?S.sel.delete(id):S.sel.add(id);store.set('gs:sel',[...S.sel]);S.shown.clear();renderChips();render()}
+  else if(t.dataset.cat){S.cat=t.dataset.cat;S.shown.clear();renderChips();render()}
+  else if(t.dataset.more){S.shown.set(t.dataset.more,(S.shown.get(t.dataset.more)||STEP)+MORE);render()}
+  else if(t.dataset.less){S.shown.delete(t.dataset.less);render();document.querySelector(`[data-group="${t.dataset.less}"]`)?.scrollIntoView({block:'start'})}
   else if(t.dataset.close!==undefined) $('#detail').close();
-  else if(t.classList.contains('card')){const it=S.items.find(x=>x.k===t.dataset.key);if(it)openDetail(it)}
+  else if(t.classList.contains('card')){const it=S.byKey.get(t.dataset.key);if(it)openDetail(it)}
 });
 function segBind(sel,key){$(sel).addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
-  S[key]=b.dataset.v;$(sel).querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',x===b));render()})}
+  S[key]=b.dataset.v;S.shown.clear();$(sel).querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',x===b));render()})}
 segBind('#typeSeg','type'); segBind('#groupSeg','group');
-$('#sort').addEventListener('change',e=>{S.sort=e.target.value;render()});
-$('#minImdb').addEventListener('input',e=>{S.minImdb=+e.target.value;$('#minOut').textContent=S.minImdb?S.minImdb.toFixed(1):'—';render()});
-let qT;$('#q').addEventListener('input',e=>{clearTimeout(qT);qT=setTimeout(()=>{S.q=e.target.value;render()},200)});
+$('#sort').addEventListener('change',e=>{S.sort=e.target.value;S.shown.clear();render()});
+$('#minImdb').addEventListener('input',e=>{S.minImdb=+e.target.value;S.shown.clear();$('#minOut').textContent=S.minImdb?S.minImdb.toFixed(1):'—';render()});
+let qT;$('#q').addEventListener('input',e=>{clearTimeout(qT);qT=setTimeout(()=>{S.q=e.target.value;S.shown.clear();render()},200)});
 load();
 </script>
 </body>

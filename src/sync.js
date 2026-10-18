@@ -15,6 +15,7 @@ const norm = (n) => n.toLowerCase().replace(/\+/g, 'plus').replace(/[^a-z0-9]/g,
 const prefIndex = (p) => { const i = PREFERRED.indexOf(norm(p.name)); return i < 0 ? Infinity : i; };
 const EXCLUDE = /channel|with ads|standard|kids|amazon video|google play|apple tv store|rakuten|chili|microsoft|youtube|justwatch|pluto|plex/i;
 const DAY = 864e5;
+const SHARDS = 64;
 
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -82,43 +83,51 @@ async function getProviders() {
 }
 
 // ---------- catalogo ----------
+// Scarica l'intero catalogo di ogni piattaforma (TMDB restituisce al massimo 500 pagine da 20 titoli).
 async function getCatalog(providers) {
-  const today = new Date().toISOString().slice(0, 10);
-  const jobs = [];
-  for (const p of providers) for (const type of ['movie', 'tv']) {
-    const base = { watch_region: config.region, with_watch_providers: p.id,
-      with_watch_monetization_types: 'flatrate|free|ads', language: config.language, include_adult: 'false' };
-    for (let page = 1; page <= config.pagesPopular; page++)
-      jobs.push({ p, type, list: 'popular', params: { ...base, page, sort_by: 'popularity.desc' } });
-    const dateField = type === 'movie' ? 'primary_release_date' : 'first_air_date';
-    for (let page = 1; page <= config.pagesRecent; page++)
-      jobs.push({ p, type, list: 'recent', params: { ...base, page, sort_by: `${dateField}.desc`,
-        [`${dateField}.lte`]: today, 'vote_count.gte': 10 } });
-  }
-  log(`Catalogo: ${jobs.length} richieste a TMDB per ${providers.length} piattaforme`);
-
   const items = new Map();
-  let failed = 0;
-  await pool(jobs, 8, async (j) => {
+  let failed = 0, requests = 0;
+
+  const fetchPage = async (p, type, page) => {
+    const params = { watch_region: config.region, with_watch_providers: p.id,
+      with_watch_monetization_types: 'flatrate|free|ads', language: config.language,
+      include_adult: 'false', sort_by: 'popularity.desc', page };
     let d;
-    try { d = await tmdb('/discover/' + j.type, j.params); }
-    catch (err) { if (err.status === 401) throw err; failed++; return; }
+    try { d = await tmdb('/discover/' + type, params); requests++; }
+    catch (err) { if (err.status === 401) throw err; failed++; return null; }
     d.results.forEach((r, i) => {
-      const key = `${j.type}:${r.id}`;
+      const key = `${type}:${r.id}`;
       let it = items.get(key);
       if (!it) {
-        it = { key, type: j.type, id: r.id, title: r.title || r.name, orig: r.original_title || r.original_name,
+        it = { key, type, id: r.id, title: r.title || r.name, orig: r.original_title || r.original_name,
           date: r.release_date || r.first_air_date || '', poster: r.poster_path || null,
-          overview: (r.overview || '').slice(0, 600), cats: catsFor(j.type, r.genre_ids),
-          providers: new Set(), popularity: r.popularity || 0, tmdbVote: r.vote_average || null, rank: Infinity };
+          overview: (r.overview || '').slice(0, 600), cats: catsFor(type, r.genre_ids),
+          providers: new Set(), popularity: r.popularity || 0, rank: Infinity };
         items.set(key, it);
       }
-      it.providers.add(j.p.id);
-      if (j.list === 'popular') it.rank = Math.min(it.rank, (j.params.page - 1) * 20 + i);
+      it.providers.add(p.id);
+      it.rank = Math.min(it.rank, (page - 1) * 20 + i);
       it.popularity = Math.max(it.popularity, r.popularity || 0);
     });
+    return d;
+  };
+
+  // 1) prima pagina di ogni piattaforma e tipo, per sapere quante pagine ci sono
+  const firsts = [];
+  for (const p of providers) for (const type of ['movie', 'tv']) firsts.push({ p, type });
+  const totals = await pool(firsts, 8, async (j) => {
+    const d = await fetchPage(j.p, j.type, 1);
+    return { ...j, pages: Math.min(d?.total_pages || 0, config.maxPages, 500), results: d?.total_results || 0 };
   });
-  if (failed) log(`Attenzione: ${failed} richieste di catalogo fallite, i titoli relativi mancano in questo giro`);
+  for (const t of totals) log(`  ${t.p.name} · ${t.type === 'movie' ? 'film' : 'serie'}: ${t.results} titoli, ${t.pages} pagine`);
+
+  // 2) tutte le altre pagine
+  const rest = [];
+  for (const t of totals) for (let page = 2; page <= t.pages; page++) rest.push({ ...t, page });
+  log(`Catalogo: ${rest.length + firsts.length} richieste a TMDB per ${providers.length} piattaforme`);
+  await pool(rest, 10, (j) => fetchPage(j.p, j.type, j.page));
+
+  if (failed) log(`Attenzione: ${failed} pagine di catalogo non scaricate, i titoli relativi mancano in questo giro`);
   return items;
 }
 
@@ -138,7 +147,7 @@ async function enrichRatings(items, cache) {
     return !c || (c.imdbId === null && now - (c.extAt || 0) > ttl);
   });
   log(`ID IMDb da cercare: ${needExt.length}`);
-  await pool(needExt, 8, async (it) => {
+  await pool(needExt, 12, async (it) => {
     try {
       const ext = await tmdb(`/${it.type}/${it.id}/external_ids`);
       cache[it.key] = { ...(cache[it.key] || {}), imdbId: ext.imdb_id || null, extAt: now };
@@ -208,26 +217,30 @@ export async function runSync() {
   const r = await enrichRatings(items, cache);
   await writeJSONAtomic(ratingsFile, cache);
 
+  const sorted = [...items.values()].sort((a, b) => a.rank - b.rank || b.popularity - a.popularity);
   const out = {
     generatedAt: new Date().toISOString(),
     region: config.region,
     ratings: { pending: r.pending, note: r.stop || null },
     providers: providers.map(({ id, name, logo }) => ({ id, name, logo })),
     categories: CATS.map(({ id, name }) => ({ id, name })),
-    // Chiavi brevi per contenere il peso del file
-    items: [...items.values()].sort((a, b) => a.rank - b.rank || b.popularity - a.popularity).map((it) => {
+    // Chiavi brevi per contenere il peso del file; la trama è nei file trame/<n>.json
+    items: sorted.map((it) => {
       const c = cache[it.key] || {};
       return {
-        k: it.key, ty: it.type, id: it.id, t: it.title, o: it.orig !== it.title ? it.orig : undefined,
-        d: it.date || undefined, p: it.poster || undefined, ov: it.overview || undefined,
-        c: it.cats, pr: [...it.providers], po: Math.round(it.popularity * 10) / 10,
-        r: Number.isFinite(it.rank) ? it.rank : undefined,
+        ty: it.type === 'movie' ? 'm' : 't', id: it.id, t: it.title, o: it.orig !== it.title ? it.orig : undefined,
+        d: it.date || undefined, p: it.poster || undefined, c: it.cats, pr: [...it.providers],
         ii: c.imdbId || undefined, im: c.imdb ?? undefined, iv: c.votes ?? undefined,
         rt: c.rt ?? undefined, mc: c.meta ?? undefined,
         nr: c.ratedAt && c.imdb == null && c.rt == null ? 1 : undefined, // controllato, nessun voto disponibile
       };
     }),
   };
+  // Trame divise in SHARDS file, scelti in base all'ID TMDB: il frontend scarica solo quello che serve
+  const shards = Array.from({ length: SHARDS }, () => ({}));
+  for (const it of sorted) if (it.overview) shards[it.id % SHARDS][it.key] = it.overview;
+  await Promise.all(shards.map((sh, n) => writeJSONAtomic(path.join(config.publicDir, 'trame', `${n}.json`), sh)));
+
   const outFile = path.join(config.publicDir, 'data.json');
   await writeJSONAtomic(outFile, out);
   const withVotes = out.items.filter((x) => x.im != null).length;

@@ -7,14 +7,10 @@ Chi apre il sito non deve inserire chiavi: un processo notturno scarica i dati e
 ## Come funziona
 
 1. **Piattaforme**: la lista delle piattaforme attive in Italia arriva da TMDB, con i dati di disponibilità forniti da JustWatch. Di default vengono scelte le 12 principali.
-2. **Catalogo**: per ogni piattaforma e per ogni tipo (film o serie) vengono scaricate due liste:
-   - le prime 5 pagine dei titoli più visti;
-   - le prime 2 pagine delle uscite più recenti.
-
-   Con 20 titoli per pagina, si ottengono circa 2.000–3.000 titoli unici.
+2. **Catalogo**: per ogni piattaforma e tipo (film o serie) viene scaricato l'intero catalogo disponibile in Italia, ordinato per popolarità. TMDB arriva fino a 10.000 titoli per lista. Le trame sono divise in piccoli file separati (`trame/`), che il sito scarica solo quando apri una scheda.
 3. **Categorie**: i generi TMDB di film e serie vengono riuniti in 16 categorie italiane, definite in `src/categories.js`.
 4. **Voti**: per ogni titolo si ricava l'ID IMDb da TMDB e poi si interroga OMDb, che restituisce il voto IMDb, il Tomatometer di Rotten Tomatoes e il Metascore. Un voto già scaricato viene aggiornato solo dopo 30 giorni.
-5. **Budget OMDb**: il piano free di OMDb consente 1.000 richieste al giorno. Il sync ne usa al massimo 900 e dà precedenza ai titoli più visti. Al primo avvio i voti si completano quindi in 3–4 notti; il sito mostra quanti titoli sono ancora in attesa. Con la chiave OMDb a pagamento (Patreon, da 1 $/mese) basta alzare `OMDB_DAILY_BUDGET`.
+5. **Budget OMDb**: il piano free di OMDb consente 1.000 richieste al giorno. Il sync ne usa al massimo 900 e dà precedenza ai titoli più visti. Con il catalogo completo i voti dei titoli più visti arrivano nelle prime notti, mentre quelli dell'intero archivio richiedono alcune settimane. Il sito mostra quanti titoli sono ancora in attesa. Con la chiave OMDb a pagamento (Patreon, da 1 $/mese) basta alzare `OMDB_DAILY_BUDGET`.
 
 ## Chiavi necessarie (gratuite)
 
@@ -63,14 +59,13 @@ Serve Node 20 o successivo. Non ci sono dipendenze npm da installare.
 ## Personalizzazione
 
 - `PROVIDERS=8,119,337`: fissa l'elenco delle piattaforme. Questi sono gli ID TMDB di Netflix, Prime Video e Disney+. Gli ID di tutte le piattaforme compaiono nel log del sync e in `data.json`.
-- `PAGES_POPULAR` / `PAGES_RECENT`: aumentano o riducono la profondità del catalogo. Più titoli significano anche più notti per completare i voti.
+- `MAX_PAGES`: limita il numero di pagine da 20 titoli per piattaforma e tipo. Il valore predefinito, 500, corrisponde al catalogo completo.
 - `REGION` / `LANGUAGE`: permettono di generare la guida per un altro paese.
 
 ## Limiti noti
 
 - TMDB non indica la data in cui un titolo è stato aggiunto a una piattaforma. "Uscite recenti" si basa quindi sulla data di uscita del film o della serie.
 - Per molte serie OMDb non ha il Tomatometer: in quei casi compare solo il voto IMDb.
-- Il catalogo copre i titoli più visti e più recenti di ogni piattaforma, non l'intero archivio.
 
 ## Attribuzione
 

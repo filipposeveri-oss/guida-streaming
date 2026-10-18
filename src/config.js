@@ -27,8 +27,7 @@ export const config = {
   language: e.LANGUAGE || 'it-IT',
   providers: (e.PROVIDERS || '').split(',').map((s) => +s.trim()).filter(Boolean),
   providerLimit: int(e.PROVIDER_LIMIT, 12),
-  pagesPopular: int(e.PAGES_POPULAR, 5),   // 20 titoli per pagina, per piattaforma e tipo
-  pagesRecent: int(e.PAGES_RECENT, 2),
+  maxPages: int(e.MAX_PAGES, 500),        // pagine da 20 titoli per piattaforma e tipo; 500 = catalogo completo
   omdbDailyBudget: int(e.OMDB_DAILY_BUDGET, 900),
   ratingTtlDays: int(e.RATING_TTL_DAYS, 30),
   dataDir: path.resolve(ROOT, e.DATA_DIR || 'data'),
