@@ -84,6 +84,21 @@ section.group h2 .n{font:500 12px var(--f-mono);color:var(--muted)}
 .provs{display:flex;gap:3px}
 .provs img{width:16px;height:16px;border-radius:4px}
 .more{margin-top:14px;gap:10px}
+.views{display:inline-flex;border:1px solid var(--line);border-radius:999px;overflow:hidden;background:var(--surface)}
+.views button{border:0;background:none;padding:8px 16px;font-weight:600;font-size:14px;cursor:pointer;display:inline-flex;gap:6px;align-items:center}
+.views button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
+.views .cnt{font:700 11px var(--f-mono);background:var(--accent);color:var(--accent-ink);border-radius:999px;padding:1px 6px;font-variant-numeric:tabular-nums}
+.views .cnt:empty{display:none}
+.cw{position:relative;min-width:0;display:grid}
+.save{position:absolute;top:6px;right:6px;width:34px;height:34px;border-radius:50%;border:0;background:var(--surface);color:var(--ink);display:grid;place-items:center;cursor:pointer;box-shadow:0 1px 4px rgb(0 0 0 / .3)}
+.save svg{width:16px;height:16px}
+.save[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+.poster .kind.seen{background:var(--ink);color:var(--bg)}
+.card.gone .poster img{filter:grayscale(1);opacity:.6}
+.pfbar{display:grid;gap:10px;padding-block:14px 4px}
+.sync{border:1px solid var(--line);border-radius:12px;background:var(--surface);padding:12px 14px;display:grid;gap:8px;font-size:14px}
+.sync input{border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:var(--bg);font:12px var(--f-mono);width:100%;min-width:0}
+.sync .row{gap:8px}
 .empty{padding-block:48px;max-width:62ch}
 .empty h2{font:700 26px/1.15 var(--f-display);margin:0 0 10px;text-wrap:balance}
 .empty ol{padding-left:20px;display:grid;gap:6px}
@@ -114,10 +129,14 @@ dialog::backdrop{background:rgb(0 0 0 / .5)}
       <h1>Guida Streaming<span class="dot" aria-hidden="true"></span></h1>
       <p class="sub" id="sub">Cataloghi italiani di film e serie, con i voti di IMDb e Rotten Tomatoes.</p>
     </div>
+    <div class="views" id="views" role="group" aria-label="Vista" hidden>
+      <button type="button" data-view="catalog" aria-pressed="true">Catalogo</button>
+      <button type="button" data-view="pf" aria-pressed="false">My Portfolio <span class="cnt" id="pfCount"></span></button>
+    </div>
   </header>
 
   <div class="bar" id="bar" hidden>
-    <div class="row"><span class="lbl">Piattaforme</span><div class="chips" id="provChips"></div></div>
+    <div class="row" id="provRow"><span class="lbl">Piattaforme</span><div class="chips" id="provChips"></div></div>
     <div class="row"><span class="lbl">Categoria</span><div class="chips" id="catChips"></div></div>
     <div class="tools">
       <div class="seg" id="typeSeg" role="group" aria-label="Tipo">
@@ -130,7 +149,7 @@ dialog::backdrop{background:rgb(0 0 0 / .5)}
         <button type="button" data-v="category" aria-pressed="false">Per categoria</button>
       </div>
       <select id="sort" aria-label="Ordina">
-        <option value="pop">Più visti</option>
+        <option value="pop">Più visti / Aggiunti di recente</option>
         <option value="new">Uscite recenti</option>
         <option value="imdb">Voto IMDb</option>
         <option value="rt">Rotten Tomatoes</option>
@@ -140,6 +159,20 @@ dialog::backdrop{background:rgb(0 0 0 / .5)}
     </div>
   </div>
 
+  <div class="pfbar" id="pfBar" hidden>
+    <div class="seg" id="seenSeg" role="group" aria-label="Stato">
+      <button type="button" data-v="todo" aria-pressed="true">Da vedere</button>
+      <button type="button" data-v="seen" aria-pressed="false">Visti</button>
+      <button type="button" data-v="all" aria-pressed="false">Tutti</button>
+    </div>
+    <div class="sync">
+      <div class="row"><b>Usalo su altri dispositivi</b><button class="btn" type="button" id="makeLink">Crea link di sincronizzazione</button></div>
+      <div id="linkBox" hidden>
+        <input id="syncLink" readonly aria-label="Link di sincronizzazione">
+        <div class="row" style="margin-top:8px"><button class="btn primary" type="button" id="copyLink">Copia link</button><span class="y" id="copyMsg">Apri il link sull'altro dispositivo: i titoli verranno aggiunti a quelli già salvati lì.</span></div>
+      </div>
+    </div>
+  </div>
   <div class="status" id="status">Carico il catalogo…</div>
   <div id="banners"></div>
   <main id="main"></main>
@@ -156,20 +189,69 @@ dialog::backdrop{background:rgb(0 0 0 / .5)}
 "use strict";
 const IMG='https://image.tmdb.org/t/p/';
 const S={data:null,items:[],prov:new Map(),cats:[],sel:new Set(),type:'all',cat:'all',group:'platform',sort:'pop',
-  minImdb:0,q:'',shown:new Map(),byKey:new Map(),trame:new Map()};
+  minImdb:0,q:'',shown:new Map(),byKey:new Map(),trame:new Map(),view:'catalog',seen:'todo',pf:{}};
 const STEP=12, MORE=48, SHARDS=64;
 const store={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch{return d}},
              set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch{}}};
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmtInt=n=>n==null?'':n.toLocaleString('it-IT');
+const titoli=n=>n===1?'1 titolo':`${fmtInt(n)} titoli`;
+const ICON_SAVE=on=>`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18l-6-4.5L6 21z" fill="${on?'currentColor':'none'}" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>`;
+
+// ---------- My Portfolio (salvato nel browser) ----------
+// pf: { "movie:123": { at: timestamp, s: 0|1 (visto), t, p, ty, id, d } } — titolo e poster restano anche se il titolo esce dal catalogo
+function pfLoad(){S.pf=store.get('gs:pf',{})||{}}
+function pfSave(){store.set('gs:pf',S.pf);pfCount()}
+function pfCount(){const n=Object.keys(S.pf).length;$('#pfCount').textContent=n?fmtInt(n):''}
+function pfHas(k){return !!S.pf[k]}
+function pfToggle(k){
+  if(S.pf[k]) delete S.pf[k];
+  else {const it=S.byKey.get(k);S.pf[k]={at:Date.now(),s:0,...(it?{t:it.t,p:it.p,ty:it.ty,id:it.id,d:it.d}:{})}}
+  pfSave();
+}
+function pfSeen(k){if(S.pf[k]){S.pf[k].s=S.pf[k].s?0:1;pfSave()}}
+function pfItems(){
+  return Object.entries(S.pf).map(([k,v])=>{
+    const it=S.byKey.get(k);
+    if(it) return Object.assign(it,{_at:v.at,_s:v.s});
+    const [ty,id]=k.split(':');
+    return {k,ty,id:+id,t:v.t||'Titolo non più in catalogo',p:v.p,d:v.d,c:[],pr:[],gone:1,_at:v.at,_s:v.s};
+  });
+}
+function pfLink(){
+  const code=Object.entries(S.pf).map(([k,v])=>(k[0]==='m'?'m':'t')+k.split(':')[1]+(v.s?'v':'')).join('.');
+  return location.origin+location.pathname+'#pf='+code;
+}
+function pfImportFromHash(){
+  const m=location.hash.match(/^#pf=([mt0-9v.]+)$/); if(!m) return;
+  const list=m[1].split('.').map(x=>x.match(/^([mt])(\d+)(v?)$/)).filter(Boolean);
+  history.replaceState(null,'',location.pathname);
+  const nuovi=list.filter(x=>!S.pf[(x[1]==='m'?'movie':'tv')+':'+x[2]]).length;
+  const el=document.createElement('div');el.className='banner';
+  el.innerHTML=`Questo link contiene ${titoli(list.length)} di My Portfolio, ${nuovi===1?'1 nuovo':fmtInt(nuovi)+' nuovi'} per questo dispositivo. <span class="row" style="margin-top:8px"><button class="btn primary" type="button" id="doImport">Aggiungi a My Portfolio</button><button class="btn" type="button" id="noImport">Ignora</button></span>`;
+  $('#banners').prepend(el);
+  el.querySelector('#noImport').onclick=()=>el.remove();
+  el.querySelector('#doImport').onclick=()=>{
+    for(const x of list){const k=(x[1]==='m'?'movie':'tv')+':'+x[2];const it=S.byKey.get(k);
+      if(!S.pf[k]) S.pf[k]={at:Date.now(),s:x[3]?1:0,...(it?{t:it.t,p:it.p,ty:it.ty,id:it.id,d:it.d}:{})};
+      else if(x[3]) S.pf[k].s=1;}
+    pfSave();el.textContent=nuovi===1?'Aggiunto 1 titolo a My Portfolio.':`Aggiunti ${fmtInt(nuovi)} titoli a My Portfolio.`;setView('pf');
+  };
+}
+function setView(v){
+  S.view=v;S.shown.clear();
+  $('#views').querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.view===v));
+  $('#provRow').hidden=v==='pf';$('#pfBar').hidden=v!=='pf';$('#linkBox').hidden=true;
+  render();
+}
 
 async function load(){
   try{
     const r=await fetch('data.json',{cache:'no-cache'});
     if(r.status===503){$('#status').textContent='Primo aggiornamento dei cataloghi in corso. Ricarica la pagina tra qualche minuto.';return}
     if(!r.ok) throw new Error();
-    const d=await r.json(); S.data=d; S.items=d.items.map(it=>{it.ty=it.ty==='m'?'movie':it.ty==='t'?'tv':it.ty;it.k=it.ty+':'+it.id;S.byKey.set(it.k,it);return it}); S.cats=d.categories;
+    const d=await r.json(); S.data=d; S.items=d.items.map((it,i)=>{it.ty=it.ty==='m'?'movie':it.ty==='t'?'tv':it.ty;it.k=it.ty+':'+it.id;it.i=i;S.byKey.set(it.k,it);return it}); S.cats=d.categories;
     d.providers.forEach(p=>S.prov.set(p.id,p));
     const saved=store.get('gs:sel',null);
     S.sel=new Set((saved||d.providers.map(p=>p.id)).filter(id=>S.prov.has(id)));
@@ -177,7 +259,7 @@ async function load(){
     const when=new Date(d.generatedAt);
     $('#sub').textContent=`Cataloghi italiani di film e serie con i voti di IMDb e Rotten Tomatoes · aggiornato ${when.toLocaleDateString('it-IT',{day:'numeric',month:'long'})} alle ${when.toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})}`;
     if(d.ratings&&d.ratings.pending>0) banner(`I voti di ${fmtInt(d.ratings.pending)} titoli arriveranno nei prossimi aggiornamenti notturni.`);
-    $('#bar').hidden=false; renderChips(); render();
+    pfLoad(); pfCount(); $('#views').hidden=false; $('#bar').hidden=false; renderChips(); pfImportFromHash(); render();
   }catch{ $('#status').textContent='Non riesco a caricare il catalogo. Controlla la connessione e ricarica la pagina.' }
 }
 
@@ -191,42 +273,49 @@ function scoresHTML(it,big){
 function provImgs(it,max){return it.pr.map(id=>S.prov.get(id)).filter(Boolean).slice(0,max)
   .map(p=>`<img src="${IMG}w45${p.logo}" alt="${esc(p.name)}" title="${esc(p.name)}" loading="lazy">`).join('')}
 function cardHTML(it){
-  return `<button class="card" type="button" data-key="${it.k}">
-    <div class="poster"><span class="kind">${it.ty==='movie'?'Film':'Serie'}</span>
+  const on=pfHas(it.k), seen=on&&S.pf[it.k].s;
+  return `<div class="cw"><button class="card${it.gone?' gone':''}" type="button" data-key="${it.k}">
+    <div class="poster"><span class="kind${seen?' seen':''}">${seen?'Visto':it.ty==='movie'?'Film':'Serie'}</span>
       ${it.p?`<img src="${IMG}w342${it.p}" alt="" loading="lazy">`:`<div class="noimg">${esc(it.t)}</div>`}</div>
     <span class="t">${esc(it.t)}</span><span class="y">${it.d?it.d.slice(0,4):''}</span>
-    <span class="scores">${scoresHTML(it)}</span><span class="provs">${provImgs(it,4)}</span></button>`;
+    ${it.gone?'<span class="y">Non più disponibile in streaming</span>':`<span class="scores">${scoresHTML(it)}</span><span class="provs">${provImgs(it,4)}</span>`}</button>
+    <button class="save" type="button" data-save="${it.k}" aria-pressed="${on}" aria-label="${on?'Rimuovi da':'Aggiungi a'} My Portfolio" title="${on?'Rimuovi da':'Aggiungi a'} My Portfolio">${ICON_SAVE(on)}</button></div>`;
 }
 function visible(){
-  const q=S.q.trim().toLowerCase();
-  const arr=S.items.filter(it=>{
-    if(!it.pr.some(id=>S.sel.has(id))) return false;
+  const q=S.q.trim().toLowerCase(), pf=S.view==='pf';
+  const arr=(pf?pfItems():S.items).filter(it=>{
+    if(pf&&S.seen!=='all'&&(S.seen==='seen')!==!!it._s) return false;
+    if(!pf&&!it.pr.some(id=>S.sel.has(id))) return false;
     if(S.type!=='all'&&it.ty!==S.type) return false;
-    if(S.cat!=='all'&&!it.c.includes(S.cat)) return false;
-    if(S.minImdb>0&&!(it.im>=S.minImdb)) return false;
+    if(S.cat!=='all'&&!it.gone&&!it.c.includes(S.cat)) return false;
+    if(S.minImdb>0&&!it.gone&&!(it.im>=S.minImdb)) return false;
     if(q&&!it.t.toLowerCase().includes(q)&&!(it.o||'').toLowerCase().includes(q)) return false;
     return true});
   const n=(v)=>v==null?-1:v;
   if(S.sort==='imdb') arr.sort((a,b)=>n(b.im)-n(a.im)||n(b.iv)-n(a.iv));
   else if(S.sort==='rt') arr.sort((a,b)=>n(b.rt)-n(a.rt)||n(b.im)-n(a.im));
   else if(S.sort==='new') arr.sort((a,b)=>(b.d||'').localeCompare(a.d||''));
-  else arr.sort((a,b)=>(a.r??1e9)-(b.r??1e9)||b.po-a.po);
+  else if(pf) arr.sort((a,b)=>b._at-a._at);
+  else arr.sort((a,b)=>a.i-b.i);
   return arr;
 }
 function render(){
-  const arr=visible(), groups=[];
+  const arr=visible(), groups=[], pf=S.view==='pf';
   if(S.group==='platform'){
-    for(const p of S.data.providers) if(S.sel.has(p.id)){const g=arr.filter(it=>it.pr.includes(p.id));if(g.length)groups.push({id:'p'+p.id,title:p.name,logo:p.logo,items:g})}
+    for(const p of S.data.providers) if(pf||S.sel.has(p.id)){const g=arr.filter(it=>it.pr.includes(p.id));if(g.length)groups.push({id:'p'+p.id,title:p.name,logo:p.logo,items:g})}
   } else {
     for(const c of S.cats){if(S.cat!=='all'&&c.id!==S.cat)continue;const g=arr.filter(it=>it.c.includes(c.id));if(g.length)groups.push({id:'c'+c.id,title:c.name,items:g})}
   }
+  if(pf){const g=arr.filter(it=>it.gone);if(g.length)groups.push({id:'gone',title:'Non più in streaming',items:g})}
   $('#main').innerHTML=groups.length?groups.map(g=>{
     const n=S.shown.get(g.id)||STEP, shown=g.items.slice(0,n);
-    return `<section class="group" data-group="${g.id}"><h2>${g.logo?`<img src="${IMG}w92${g.logo}" alt="">`:''}${esc(g.title)} <span class="n">${fmtInt(g.items.length)} titoli</span></h2>
+    return `<section class="group" data-group="${g.id}"><h2>${g.logo?`<img src="${IMG}w92${g.logo}" alt="">`:''}${esc(g.title)} <span class="n">${titoli(g.items.length)}</span></h2>
       <div class="grid">${shown.map(cardHTML).join('')}</div>
       <div class="row more">${g.items.length>n?`<button class="btn" type="button" data-more="${g.id}">Mostra altri ${fmtInt(Math.min(MORE,g.items.length-n))}</button>`:''}${n>STEP?`<button class="btn" type="button" data-less="${g.id}">Riduci</button>`:''}<span class="y">${fmtInt(shown.length)} di ${fmtInt(g.items.length)}</span></div></section>`}).join('')
-    :`<div class="empty"><h2>Nessun titolo con questi filtri</h2><p>Prova ad aggiungere piattaforme, cambiare categoria o abbassare il voto minimo.</p></div>`;
-  $('#status').textContent=`${fmtInt(arr.length)} titoli`;
+    :(pf&&!Object.keys(S.pf).length
+      ?`<div class="empty"><h2>My Portfolio è vuoto</h2><p>Nel catalogo tocca l'icona del segnalibro su una locandina, oppure "Aggiungi a My Portfolio" nella scheda di un titolo. Lo ritrovi qui, diviso per piattaforma o per categoria.</p></div>`
+      :`<div class="empty"><h2>Nessun titolo con questi filtri</h2><p>${pf?'Prova a passare da "Da vedere" a "Tutti", cambiare categoria o abbassare il voto minimo.':'Prova ad aggiungere piattaforme, cambiare categoria o abbassare il voto minimo.'}</p></div>`);
+  $('#status').textContent=pf?`${titoli(arr.length)} in My Portfolio`:titoli(arr.length);
 }
 function renderChips(){
   $('#provChips').innerHTML=S.data.providers.map(p=>`<button type="button" class="chip" data-prov="${p.id}" aria-pressed="${S.sel.has(p.id)}"><img src="${IMG}w45${p.logo}" alt="">${esc(p.name)}</button>`).join('');
@@ -235,14 +324,14 @@ function renderChips(){
 function banner(msg){const el=document.createElement('div');el.className='banner';el.textContent=msg;$('#banners').append(el)}
 
 function openDetail(it){
-  const provs=it.pr.map(id=>S.prov.get(id)?.name).filter(Boolean).join(', ');
+  const provs=it.gone?'non più disponibile in streaming in Italia':it.pr.map(id=>S.prov.get(id)?.name).filter(Boolean).join(', ');
   const cats=it.c.map(id=>S.cats.find(c=>c.id===id)?.name).filter(Boolean).join(', ');
   $('#detailBody').innerHTML=`<div class="det">
     <div class="poster">${it.p?`<img src="${IMG}w342${it.p}" alt="">`:`<div class="noimg">${esc(it.t)}</div>`}</div>
     <div style="display:grid;gap:10px;align-content:start">
       <h3>${esc(it.t)}</h3>
       <div class="meta">${it.ty==='movie'?'Film':'Serie TV'}${it.d?' · '+it.d.slice(0,4):''}${it.o?' · '+esc(it.o):''}</div>
-      <div class="big">${scoresHTML(it,true)}</div>
+      ${it.gone?'':`<div class="big">${scoresHTML(it,true)}</div>`}
       ${it.iv?`<div class="meta">${fmtInt(it.iv)} voti su IMDb</div>`:''}
     </div></div>
     <div class="meta"><b>Su:</b> ${esc(provs)||'—'}<br><b>Categorie:</b> ${esc(cats)||'—'}</div>
@@ -252,9 +341,16 @@ function openDetail(it){
       ${it.ii?`<a href="https://www.imdb.com/title/${it.ii}/" target="_blank" rel="noopener">IMDb</a>`:''}
       <a href="https://www.rottentomatoes.com/search?search=${encodeURIComponent(it.o||it.t)}" target="_blank" rel="noopener">Rotten Tomatoes</a>
     </div>
-    <div class="actions"><button class="btn" type="button" data-close>Chiudi</button></div>`;
+    <div class="actions" id="detActions"></div>`;
+  renderDetailActions(it);
   $('#detail').showModal();
   loadTrama(it).then(t=>{const el=$('#trama');if(el)el.innerHTML=t?esc(t):'<span class="meta">Trama non disponibile in italiano.</span>'});
+}
+function renderDetailActions(it){
+  const on=pfHas(it.k), seen=on&&S.pf[it.k].s;
+  $('#detActions').innerHTML=`${on?`<button class="btn" type="button" data-seen="${it.k}">${seen?'Segna da vedere':'Segna come visto'}</button>`:''}
+    <button class="btn${on?'':' primary'}" type="button" data-save="${it.k}" data-detail="1">${on?'Rimuovi da My Portfolio':'Aggiungi a My Portfolio'}</button>
+    <button class="btn" type="button" data-close>Chiudi</button>`;
 }
 async function loadTrama(it){
   const n=it.id%SHARDS;
@@ -264,6 +360,18 @@ async function loadTrama(it){
 
 document.addEventListener('click',e=>{
   const t=e.target.closest('button'); if(!t) return;
+  if(t.dataset.save){
+    pfToggle(t.dataset.save);
+    if(t.dataset.detail){const it=S.byKey.get(t.dataset.save)||pfItems().find(x=>x.k===t.dataset.save);if(it)renderDetailActions(it)}
+    if(S.view==='pf'&&!t.dataset.detail) render(); else refreshSaveButtons(t.dataset.save);
+    return;
+  }
+  if(t.dataset.seen){pfSeen(t.dataset.seen);const it=S.byKey.get(t.dataset.seen)||pfItems().find(x=>x.k===t.dataset.seen);if(it)renderDetailActions(it);refreshSaveButtons(t.dataset.seen);return}
+  if(t.dataset.view){setView(t.dataset.view);return}
+  if(t.id==='makeLink'){$('#syncLink').value=pfLink();$('#linkBox').hidden=false;return}
+  if(t.id==='copyLink'){const v=$('#syncLink').value;
+    navigator.clipboard?.writeText(v).then(()=>{$('#copyMsg').textContent='Link copiato. Aprilo sull\'altro dispositivo per aggiungere i titoli.'},
+      ()=>{$('#syncLink').select();$('#copyMsg').textContent='Seleziona e copia il link a mano.'}) ?? $('#syncLink').select();return}
   if(t.dataset.prov){const id=+t.dataset.prov;S.sel.has(id)?S.sel.delete(id):S.sel.add(id);store.set('gs:sel',[...S.sel]);S.shown.clear();renderChips();render()}
   else if(t.dataset.cat){S.cat=t.dataset.cat;S.shown.clear();renderChips();render()}
   else if(t.dataset.more){S.shown.set(t.dataset.more,(S.shown.get(t.dataset.more)||STEP)+MORE);render()}
@@ -271,9 +379,15 @@ document.addEventListener('click',e=>{
   else if(t.dataset.close!==undefined) $('#detail').close();
   else if(t.classList.contains('card')){const it=S.byKey.get(t.dataset.key);if(it)openDetail(it)}
 });
+function refreshSaveButtons(k){
+  if(S.view==='pf'){render();return}
+  document.querySelectorAll(`.cw`).forEach(w=>{const c=w.querySelector('.card');if(c&&c.dataset.key===k){const it=S.byKey.get(k);if(it)w.outerHTML=cardHTML(it)}});
+}
+// Chiudendo la scheda in My Portfolio la vista si aggiorna
+$('#detail').addEventListener('close',()=>{if(S.view==='pf')render()});
 function segBind(sel,key){$(sel).addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
   S[key]=b.dataset.v;S.shown.clear();$(sel).querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',x===b));render()})}
-segBind('#typeSeg','type'); segBind('#groupSeg','group');
+segBind('#typeSeg','type'); segBind('#groupSeg','group'); segBind('#seenSeg','seen');
 $('#sort').addEventListener('change',e=>{S.sort=e.target.value;S.shown.clear();render()});
 $('#minImdb').addEventListener('input',e=>{S.minImdb=+e.target.value;S.shown.clear();$('#minOut').textContent=S.minImdb?S.minImdb.toFixed(1):'—';render()});
 let qT;$('#q').addEventListener('input',e=>{clearTimeout(qT);qT=setTimeout(()=>{S.q=e.target.value;S.shown.clear();render()},200)});
