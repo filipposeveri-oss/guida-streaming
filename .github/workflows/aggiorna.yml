@@ -1,0 +1,53 @@
+name: Aggiorna cataloghi
+
+on:
+  schedule:
+    - cron: "17 2 * * *"   # ogni notte alle 02:17 UTC (04:17 in Italia d'estate)
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["public/index.html", "src/**"]
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: aggiorna-cataloghi
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Scarica cataloghi e voti
+        env:
+          TMDB_TOKEN: ${{ secrets.TMDB_TOKEN }}
+          OMDB_KEY: ${{ secrets.OMDB_KEY }}
+          PROVIDERS: ${{ vars.PROVIDERS }}
+        run: node src/sync.js
+
+      - name: Salva la cache dei voti nel repository
+        run: |
+          git config user.name "guida-streaming-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add data/ratings.json
+          git diff --cached --quiet || git commit -m "Aggiorna cache voti $(date -u +%F)"
+          git push
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+      - id: deploy
+        uses: actions/deploy-pages@v4

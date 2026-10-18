@@ -1,0 +1,12 @@
+{
+  "name": "guida-streaming",
+  "version": "1.0.0",
+  "description": "Cataloghi streaming italiani per piattaforma e categoria, con voti IMDb e Rotten Tomatoes",
+  "type": "module",
+  "private": true,
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "sync": "node src/sync.js",
+    "start": "node src/server.js"
+  }
+}

@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Guida Streaming Italia</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Figtree:wght@400;500;600&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+/* Layout: barra filtri fissa in alto, sezioni raggruppate (piattaforma o categoria) con griglia di locandine */
+:root{
+  --bg:#f3f1ec; --surface:#ffffff; --ink:#1b1a24; --muted:#6b6878; --line:#dcd8cf;
+  --accent:#d9461f; --accent-ink:#ffffff; --chip:#ebe7de;
+  --imdb:#f5c518; --imdb-ink:#1b1a24; --fresh:#c8321e; --rotten:#5c8a2b;
+  --f-display:"Bricolage Grotesque",ui-sans-serif,system-ui,sans-serif;
+  --f-body:"Figtree",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#14131b; --surface:#1e1c28; --ink:#efece6; --muted:#9d99ab; --line:#2f2c3c;
+  --accent:#ff7a4d; --accent-ink:#14131b; --chip:#2a2836; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#14131b; --surface:#1e1c28; --ink:#efece6; --muted:#9d99ab; --line:#2f2c3c;
+  --accent:#ff7a4d; --accent-ink:#14131b; --chip:#2a2836; color-scheme:dark}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:15px/1.5 var(--f-body);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-bottom:env(safe-area-inset-bottom,0px)}
+img{max-width:100%;display:block}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+[hidden]{display:none!important}
+.wrap{max-width:1240px;margin:0 auto}
+header.top{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;padding-block:24px 12px}
+h1{font:800 clamp(28px,5vw,44px)/1 var(--f-display);letter-spacing:-.02em;margin:0;text-wrap:balance}
+h1 .dot{display:inline-block;width:.32em;height:.32em;border-radius:50%;background:var(--accent);margin-left:.08em;vertical-align:.12em;animation:onair 2.4s ease-in-out infinite}
+@keyframes onair{50%{opacity:.25}}
+@media (prefers-reduced-motion:reduce){h1 .dot{animation:none}}
+.sub{color:var(--muted);margin:6px 0 0;font-size:14px}
+.btn{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:7px 14px;cursor:pointer;font-weight:600;font-size:14px}
+.btn:hover{border-color:var(--ink)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.bar{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);padding-block:10px;border-bottom:1px solid var(--line);display:grid;gap:10px}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.lbl{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600;min-width:84px}
+.chips{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px;min-width:0;flex:1}
+.chips::-webkit-scrollbar{display:none}
+.chip{flex:none;display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:5px 11px;font-size:13px;cursor:pointer;white-space:nowrap}
+.chip img{width:18px;height:18px;border-radius:4px}
+.chip[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:999px;overflow:hidden;background:var(--surface)}
+.seg button{border:0;background:none;padding:5px 12px;font-size:13px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
+.tools{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.tools input[type=search],.tools select{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:6px 12px;font-size:13px;min-width:0}
+.tools input[type=search]{flex:1 1 180px}
+.range{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--muted)}
+.range output{font-family:var(--f-mono);color:var(--ink);min-width:2.4em}
+.status{font-size:13px;color:var(--muted);padding-block:10px;display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.banner{border:1px solid var(--accent);border-radius:12px;padding:10px 14px;font-size:14px;margin-top:10px;background:var(--surface)}
+section.group{padding-block:22px 8px;border-bottom:1px solid var(--line)}
+section.group h2{font:700 22px/1.1 var(--f-display);margin:0 0 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+section.group h2 img{width:28px;height:28px;border-radius:7px}
+section.group h2 .n{font:500 12px var(--f-mono);color:var(--muted)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(136px,1fr));gap:18px 14px}
+.card{background:none;border:0;padding:0;text-align:left;cursor:pointer;display:grid;gap:6px;min-width:0}
+.poster{position:relative;aspect-ratio:2/3;border-radius:10px;overflow:hidden;background:var(--chip);max-width:100%}
+.poster img{width:100%;height:100%;object-fit:cover;transition:transform .3s}
+.card:hover .poster img{transform:scale(1.04)}
+@media (prefers-reduced-motion:reduce){.card:hover .poster img{transform:none}}
+.poster .kind{position:absolute;top:6px;left:6px;font:700 10px var(--f-mono);letter-spacing:.06em;text-transform:uppercase;background:var(--surface);color:var(--ink);padding:2px 6px;border-radius:5px}
+.poster .noimg{display:grid;place-items:center;height:100%;padding:10px;text-align:center;font:700 15px var(--f-display);color:var(--muted)}
+.t{font-weight:600;font-size:14px;line-height:1.25;overflow-wrap:anywhere}
+.y{color:var(--muted);font-size:12px}
+.scores{display:flex;gap:5px;flex-wrap:wrap;min-height:22px}
+.sc{display:inline-flex;align-items:center;gap:4px;font:700 12px var(--f-mono);padding:2px 6px;border-radius:5px;font-variant-numeric:tabular-nums}
+.sc.imdb{background:var(--imdb);color:var(--imdb-ink)}
+.sc.rt{color:#fff}
+.sc.rt.fresh{background:var(--fresh)} .sc.rt.rotten{background:var(--rotten)}
+.sc.wait{background:var(--chip);color:var(--muted);font-weight:500}
+.sc small{font:600 9px var(--f-body);letter-spacing:.04em;opacity:.85}
+.provs{display:flex;gap:3px}
+.provs img{width:16px;height:16px;border-radius:4px}
+.more{margin-top:14px}
+.empty{padding-block:48px;max-width:62ch}
+.empty h2{font:700 26px/1.15 var(--f-display);margin:0 0 10px;text-wrap:balance}
+.empty ol{padding-left:20px;display:grid;gap:6px}
+.empty a,dialog a{color:var(--accent);font-weight:600}
+footer{color:var(--muted);font-size:12px;padding-block:28px;max-width:80ch}
+dialog{border:1px solid var(--line);border-radius:16px;background:var(--surface);color:var(--ink);padding:0;width:min(640px,calc(100vw - 32px));max-height:calc(100dvh - 48px)}
+dialog::backdrop{background:rgb(0 0 0 / .5)}
+.dlg{padding:20px;display:grid;gap:14px}
+.dlg h3{font:800 24px/1.1 var(--f-display);margin:0;text-wrap:balance}
+.det{display:grid;grid-template-columns:130px 1fr;gap:16px}
+@media (max-width:480px){.det{grid-template-columns:96px 1fr}}
+.det > div{min-width:0}
+.meta{color:var(--muted);font-size:13px}
+.big{display:flex;gap:10px;flex-wrap:wrap}
+.big .sc{font-size:15px;padding:5px 9px}
+.field{display:grid;gap:4px}
+.field input{border:1px solid var(--line);border-radius:10px;padding:9px 12px;background:var(--bg);font-family:var(--f-mono);font-size:13px;width:100%}
+.field span{font-size:13px;font-weight:600}
+.field small{color:var(--muted)}
+.actions{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+.links{display:flex;gap:12px;flex-wrap:wrap;font-size:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>Guida Streaming<span class="dot" aria-hidden="true"></span></h1>
+      <p class="sub" id="sub">Cataloghi italiani di film e serie, con i voti di IMDb e Rotten Tomatoes.</p>
+    </div>
+  </header>
+
+  <div class="bar" id="bar" hidden>
+    <div class="row"><span class="lbl">Piattaforme</span><div class="chips" id="provChips"></div></div>
+    <div class="row"><span class="lbl">Categoria</span><div class="chips" id="catChips"></div></div>
+    <div class="tools">
+      <div class="seg" id="typeSeg" role="group" aria-label="Tipo">
+        <button type="button" data-v="all" aria-pressed="true">Tutti</button>
+        <button type="button" data-v="movie" aria-pressed="false">Film</button>
+        <button type="button" data-v="tv" aria-pressed="false">Serie</button>
+      </div>
+      <div class="seg" id="groupSeg" role="group" aria-label="Raggruppa per">
+        <button type="button" data-v="platform" aria-pressed="true">Per piattaforma</button>
+        <button type="button" data-v="category" aria-pressed="false">Per categoria</button>
+      </div>
+      <select id="sort" aria-label="Ordina">
+        <option value="pop">Più visti</option>
+        <option value="new">Uscite recenti</option>
+        <option value="imdb">Voto IMDb</option>
+        <option value="rt">Rotten Tomatoes</option>
+      </select>
+      <label class="range">IMDb min <input type="range" id="minImdb" min="0" max="9" step="0.5" value="0"><output id="minOut">—</output></label>
+      <input type="search" id="q" placeholder="Cerca titolo" aria-label="Cerca titolo">
+    </div>
+  </div>
+
+  <div class="status" id="status">Carico il catalogo…</div>
+  <div id="banners"></div>
+  <main id="main"></main>
+
+  <footer>
+    Disponibilità per l'Italia fornita da JustWatch tramite TMDB. Voti IMDb e Rotten Tomatoes forniti da OMDb.
+    Questo prodotto usa l'API di TMDB ma non è approvato né certificato da TMDB.
+  </footer>
+</div>
+
+<dialog id="detail"><div class="dlg" id="detailBody"></div></dialog>
+
+<script>
+"use strict";
+const IMG='https://image.tmdb.org/t/p/';
+const S={data:null,items:[],prov:new Map(),cats:[],sel:new Set(),type:'all',cat:'all',group:'platform',sort:'pop',
+  minImdb:0,q:'',showAll:new Set()};
+const store={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch{return d}},
+             set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch{}}};
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmtInt=n=>n==null?'':n.toLocaleString('it-IT');
+
+async function load(){
+  try{
+    const r=await fetch('data.json',{cache:'no-cache'});
+    if(r.status===503){$('#status').textContent='Primo aggiornamento dei cataloghi in corso. Ricarica la pagina tra qualche minuto.';return}
+    if(!r.ok) throw new Error();
+    const d=await r.json(); S.data=d; S.items=d.items; S.cats=d.categories;
+    d.providers.forEach(p=>S.prov.set(p.id,p));
+    const saved=store.get('gs:sel',null);
+    S.sel=new Set((saved||d.providers.slice(0,6).map(p=>p.id)).filter(id=>S.prov.has(id)));
+    if(!S.sel.size) d.providers.forEach(p=>S.sel.add(p.id));
+    const when=new Date(d.generatedAt);
+    $('#sub').textContent=`Cataloghi italiani di film e serie con i voti di IMDb e Rotten Tomatoes · aggiornato ${when.toLocaleDateString('it-IT',{day:'numeric',month:'long'})} alle ${when.toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})}`;
+    if(d.ratings&&d.ratings.pending>0) banner(`I voti di ${fmtInt(d.ratings.pending)} titoli arriveranno nei prossimi aggiornamenti notturni.`);
+    $('#bar').hidden=false; renderChips(); render();
+  }catch{ $('#status').textContent='Non riesco a caricare il catalogo. Controlla la connessione e ricarica la pagina.' }
+}
+
+function scoresHTML(it,big){
+  let h='';
+  if(it.im!=null) h+=`<span class="sc imdb"><small>IMDb</small>${it.im.toFixed(1)}</span>`;
+  if(it.rt!=null) h+=`<span class="sc rt ${it.rt>=60?'fresh':'rotten'}" title="Tomatometer"><small>RT</small>${it.rt}%</span>`;
+  if(big&&it.mc!=null) h+=`<span class="sc wait"><small>Metascore</small>${it.mc}</span>`;
+  return h||`<span class="sc wait">${it.ii&&!it.nr?'voti in arrivo':'nessun voto'}</span>`;
+}
+function provImgs(it,max){return it.pr.map(id=>S.prov.get(id)).filter(Boolean).slice(0,max)
+  .map(p=>`<img src="${IMG}w45${p.logo}" alt="${esc(p.name)}" title="${esc(p.name)}" loading="lazy">`).join('')}
+function cardHTML(it){
+  return `<button class="card" type="button" data-key="${it.k}">
+    <div class="poster"><span class="kind">${it.ty==='movie'?'Film':'Serie'}</span>
+      ${it.p?`<img src="${IMG}w342${it.p}" alt="" loading="lazy">`:`<div class="noimg">${esc(it.t)}</div>`}</div>
+    <span class="t">${esc(it.t)}</span><span class="y">${it.d?it.d.slice(0,4):''}</span>
+    <span class="scores">${scoresHTML(it)}</span><span class="provs">${provImgs(it,4)}</span></button>`;
+}
+function visible(){
+  const q=S.q.trim().toLowerCase();
+  const arr=S.items.filter(it=>{
+    if(!it.pr.some(id=>S.sel.has(id))) return false;
+    if(S.type!=='all'&&it.ty!==S.type) return false;
+    if(S.cat!=='all'&&!it.c.includes(S.cat)) return false;
+    if(S.minImdb>0&&!(it.im>=S.minImdb)) return false;
+    if(q&&!it.t.toLowerCase().includes(q)&&!(it.o||'').toLowerCase().includes(q)) return false;
+    return true});
+  const n=(v)=>v==null?-1:v;
+  if(S.sort==='imdb') arr.sort((a,b)=>n(b.im)-n(a.im)||n(b.iv)-n(a.iv));
+  else if(S.sort==='rt') arr.sort((a,b)=>n(b.rt)-n(a.rt)||n(b.im)-n(a.im));
+  else if(S.sort==='new') arr.sort((a,b)=>(b.d||'').localeCompare(a.d||''));
+  else arr.sort((a,b)=>(a.r??1e9)-(b.r??1e9)||b.po-a.po);
+  return arr;
+}
+function render(){
+  const arr=visible(), groups=[];
+  if(S.group==='platform'){
+    for(const p of S.data.providers) if(S.sel.has(p.id)){const g=arr.filter(it=>it.pr.includes(p.id));if(g.length)groups.push({id:'p'+p.id,title:p.name,logo:p.logo,items:g})}
+  } else {
+    for(const c of S.cats){if(S.cat!=='all'&&c.id!==S.cat)continue;const g=arr.filter(it=>it.c.includes(c.id));if(g.length)groups.push({id:'c'+c.id,title:c.name,items:g})}
+  }
+  const LIMIT=12;
+  $('#main').innerHTML=groups.length?groups.map(g=>{
+    const all=S.showAll.has(g.id), shown=all?g.items:g.items.slice(0,LIMIT);
+    return `<section class="group"><h2>${g.logo?`<img src="${IMG}w92${g.logo}" alt="">`:''}${esc(g.title)} <span class="n">${fmtInt(g.items.length)} titoli</span></h2>
+      <div class="grid">${shown.map(cardHTML).join('')}</div>
+      ${g.items.length>LIMIT?`<button class="btn more" type="button" data-toggle="${g.id}">${all?'Mostra meno':'Mostra tutti ('+fmtInt(g.items.length)+')'}</button>`:''}</section>`}).join('')
+    :`<div class="empty"><h2>Nessun titolo con questi filtri</h2><p>Prova ad aggiungere piattaforme, cambiare categoria o abbassare il voto minimo.</p></div>`;
+  $('#status').textContent=`${fmtInt(arr.length)} titoli`;
+}
+function renderChips(){
+  $('#provChips').innerHTML=S.data.providers.map(p=>`<button type="button" class="chip" data-prov="${p.id}" aria-pressed="${S.sel.has(p.id)}"><img src="${IMG}w45${p.logo}" alt="">${esc(p.name)}</button>`).join('');
+  $('#catChips').innerHTML=[{id:'all',name:'Tutte'},...S.cats].map(c=>`<button type="button" class="chip" data-cat="${c.id}" aria-pressed="${S.cat===c.id}">${esc(c.name)}</button>`).join('');
+}
+function banner(msg){const el=document.createElement('div');el.className='banner';el.textContent=msg;$('#banners').append(el)}
+
+function openDetail(it){
+  const provs=it.pr.map(id=>S.prov.get(id)?.name).filter(Boolean).join(', ');
+  const cats=it.c.map(id=>S.cats.find(c=>c.id===id)?.name).filter(Boolean).join(', ');
+  $('#detailBody').innerHTML=`<div class="det">
+    <div class="poster">${it.p?`<img src="${IMG}w342${it.p}" alt="">`:`<div class="noimg">${esc(it.t)}</div>`}</div>
+    <div style="display:grid;gap:10px;align-content:start">
+      <h3>${esc(it.t)}</h3>
+      <div class="meta">${it.ty==='movie'?'Film':'Serie TV'}${it.d?' · '+it.d.slice(0,4):''}${it.o?' · '+esc(it.o):''}</div>
+      <div class="big">${scoresHTML(it,true)}</div>
+      ${it.iv?`<div class="meta">${fmtInt(it.iv)} voti su IMDb</div>`:''}
+    </div></div>
+    <div class="meta"><b>Su:</b> ${esc(provs)||'—'}<br><b>Categorie:</b> ${esc(cats)||'—'}</div>
+    <p style="margin:0;max-width:65ch">${esc(it.ov)||'<span class="meta">Trama non disponibile in italiano.</span>'}</p>
+    <div class="links">
+      <a href="https://www.themoviedb.org/${it.ty}/${it.id}/watch?locale=IT" target="_blank" rel="noopener">Dove guardarlo</a>
+      ${it.ii?`<a href="https://www.imdb.com/title/${it.ii}/" target="_blank" rel="noopener">IMDb</a>`:''}
+      <a href="https://www.rottentomatoes.com/search?search=${encodeURIComponent(it.o||it.t)}" target="_blank" rel="noopener">Rotten Tomatoes</a>
+    </div>
+    <div class="actions"><button class="btn" type="button" data-close>Chiudi</button></div>`;
+  $('#detail').showModal();
+}
+
+document.addEventListener('click',e=>{
+  const t=e.target.closest('button'); if(!t) return;
+  if(t.dataset.prov){const id=+t.dataset.prov;S.sel.has(id)?S.sel.delete(id):S.sel.add(id);store.set('gs:sel',[...S.sel]);renderChips();render()}
+  else if(t.dataset.cat){S.cat=t.dataset.cat;renderChips();render()}
+  else if(t.dataset.toggle){S.showAll.has(t.dataset.toggle)?S.showAll.delete(t.dataset.toggle):S.showAll.add(t.dataset.toggle);render()}
+  else if(t.dataset.close!==undefined) $('#detail').close();
+  else if(t.classList.contains('card')){const it=S.items.find(x=>x.k===t.dataset.key);if(it)openDetail(it)}
+});
+function segBind(sel,key){$(sel).addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
+  S[key]=b.dataset.v;$(sel).querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',x===b));render()})}
+segBind('#typeSeg','type'); segBind('#groupSeg','group');
+$('#sort').addEventListener('change',e=>{S.sort=e.target.value;render()});
+$('#minImdb').addEventListener('input',e=>{S.minImdb=+e.target.value;$('#minOut').textContent=S.minImdb?S.minImdb.toFixed(1):'—';render()});
+let qT;$('#q').addEventListener('input',e=>{clearTimeout(qT);qT=setTimeout(()=>{S.q=e.target.value;render()},200)});
+load();
+</script>
+</body>
+</html>
