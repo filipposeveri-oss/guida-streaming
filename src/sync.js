@@ -184,6 +184,7 @@ async function enrichRatings(items, cache) {
   });
   if (stop) {
     log('OMDb: ' + stop);
+    if (process.env.GITHUB_ACTIONS) console.log(`::warning title=OMDb::${stop}`);
     // Niente altre chiamate oggi: evita di sprecare richieste se il server riparte
     if (/limite/i.test(stop)) cache._usage.omdb = Math.max(cache._usage.omdb, config.omdbDailyBudget);
   }
@@ -234,5 +235,10 @@ export async function runSync() {
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
-  runSync().catch((err) => { console.error('Sincronizzazione fallita:', err.message); process.exit(1); });
+  runSync().catch((err) => {
+    console.error('Sincronizzazione fallita:', err.message);
+    // Su GitHub Actions l'errore compare anche nel riepilogo del run
+    if (process.env.GITHUB_ACTIONS) console.log(`::error title=Sincronizzazione fallita::${err.message.replace(/\r?\n/g, ' ')}`);
+    process.exit(1);
+  });
 }
