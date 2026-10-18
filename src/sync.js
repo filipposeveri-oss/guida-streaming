@@ -8,9 +8,12 @@ import { pathToFileURL } from 'node:url';
 import { config } from './config.js';
 import { CATS, catsFor } from './categories.js';
 
-const PREFERRED = ['Netflix', 'Amazon Prime Video', 'Disney Plus', 'Apple TV', 'Apple TV Plus', 'NOW',
-  'Paramount Plus', 'RaiPlay', 'Mediaset Infinity', 'Timvision', 'Discovery+', 'Sky Go'];
-const EXCLUDE = /channel|with ads|standard|kids|amazon video|google play|apple tv store|rakuten|chili|microsoft|youtube/i;
+// Ordine di preferenza; i nomi vengono confrontati senza spazi, maiuscole e simboli ("Now TV" = "NOW")
+const PREFERRED = ['netflix', 'amazonprimevideo', 'disneyplus', 'appletv', 'appletvplus', 'now', 'nowtv',
+  'raiplay', 'paramountplus', 'mediasetinfinity', 'skygo', 'timvision', 'discoveryplus', 'discovery'];
+const norm = (n) => n.toLowerCase().replace(/\+/g, 'plus').replace(/[^a-z0-9]/g, '');
+const prefIndex = (p) => { const i = PREFERRED.indexOf(norm(p.name)); return i < 0 ? Infinity : i; };
+const EXCLUDE = /channel|with ads|standard|kids|amazon video|google play|apple tv store|rakuten|chili|microsoft|youtube|justwatch|pluto|plex/i;
 const DAY = 864e5;
 
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
@@ -73,9 +76,8 @@ async function getProviders() {
     return config.providers.map((id) => map.get(id)).filter(Boolean);
   }
   const clean = all.filter((p) => !EXCLUDE.test(p.name));
-  const pref = clean.filter((p) => PREFERRED.includes(p.name))
-    .sort((a, b) => PREFERRED.indexOf(a.name) - PREFERRED.indexOf(b.name));
-  const rest = clean.filter((p) => !PREFERRED.includes(p.name));
+  const pref = clean.filter((p) => prefIndex(p) < Infinity).sort((a, b) => prefIndex(a) - prefIndex(b));
+  const rest = clean.filter((p) => prefIndex(p) === Infinity);
   return [...pref, ...rest].slice(0, config.providerLimit);
 }
 
@@ -199,7 +201,7 @@ export async function runSync() {
   const cache = await readJSON(ratingsFile, {});
 
   const providers = await getProviders();
-  log('Piattaforme:', providers.map((p) => p.name).join(', '));
+  log('Piattaforme:', providers.map((p) => `${p.name} (${p.id})`).join(', '));
   const items = await getCatalog(providers);
   log(`Titoli unici: ${items.size}`);
 
