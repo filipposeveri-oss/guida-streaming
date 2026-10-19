@@ -99,6 +99,12 @@ section.group h2 .n{font:500 12px var(--f-mono);color:var(--muted)}
 .sync{border:1px solid var(--line);border-radius:12px;background:var(--surface);padding:12px 14px;display:grid;gap:8px;font-size:14px}
 .sync input{border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:var(--bg);font:12px var(--f-mono);width:100%;min-width:0}
 .sync .row{gap:8px}
+.sync .steps{margin:0;padding-left:20px;display:grid;gap:4px}
+.sync a{color:var(--accent);font-weight:600}
+.sync .err{color:var(--fresh);font-weight:600}
+.sync .linkbox{display:grid;gap:8px;border-top:1px solid var(--line);padding-top:10px}
+.dotok{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--rotten);margin-right:6px;vertical-align:1px}
+.dotok.ko{background:var(--fresh)}
 .empty{padding-block:48px;max-width:62ch}
 .empty h2{font:700 26px/1.15 var(--f-display);margin:0 0 10px;text-wrap:balance}
 .empty ol{padding-left:20px;display:grid;gap:6px}
@@ -165,13 +171,7 @@ dialog::backdrop{background:rgb(0 0 0 / .5)}
       <button type="button" data-v="seen" aria-pressed="false">Visti</button>
       <button type="button" data-v="all" aria-pressed="false">Tutti</button>
     </div>
-    <div class="sync">
-      <div class="row"><b>Usalo su altri dispositivi</b><button class="btn" type="button" id="makeLink">Crea link di sincronizzazione</button></div>
-      <div id="linkBox" hidden>
-        <input id="syncLink" readonly aria-label="Link di sincronizzazione">
-        <div class="row" style="margin-top:8px"><button class="btn primary" type="button" id="copyLink">Copia link</button><span class="y" id="copyMsg">Apri il link sull'altro dispositivo: i titoli verranno aggiunti a quelli già salvati lì.</span></div>
-      </div>
-    </div>
+    <div class="sync" id="syncBox"></div>
   </div>
   <div class="status" id="status">Carico il catalogo…</div>
   <div id="banners"></div>
@@ -199,50 +199,155 @@ const fmtInt=n=>n==null?'':n.toLocaleString('it-IT');
 const titoli=n=>n===1?'1 titolo':`${fmtInt(n)} titoli`;
 const ICON_SAVE=on=>`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18l-6-4.5L6 21z" fill="${on?'currentColor':'none'}" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>`;
 
-// ---------- My Portfolio (salvato nel browser) ----------
-// pf: { "movie:123": { at: timestamp, s: 0|1 (visto), t, p, ty, id, d } } — titolo e poster restano anche se il titolo esce dal catalogo
-function pfLoad(){S.pf=store.get('gs:pf',{})||{}}
-function pfSave(){store.set('gs:pf',S.pf);pfCount()}
-function pfCount(){const n=Object.keys(S.pf).length;$('#pfCount').textContent=n?fmtInt(n):''}
-function pfHas(k){return !!S.pf[k]}
+// ---------- My Portfolio ----------
+// pf: { "movie:123": { at: aggiunto il, upd: ultima modifica, s: 0|1 visto, del: 1 se rimosso, t, p, ty, id, d } }
+// Le rimozioni restano come "del" per 90 giorni, così la sincronizzazione le propaga agli altri dispositivi.
+function pfLoad(){
+  S.pf=store.get('gs:pf',{})||{};
+  for(const v of Object.values(S.pf)) if(!v.upd) v.upd=v.at||Date.now();
+}
+function pfSave(){store.set('gs:pf',S.pf);pfCount();syncSoon()}
+function pfLive(){return Object.entries(S.pf).filter(([,v])=>!v.del)}
+function pfCount(){const n=pfLive().length;$('#pfCount').textContent=n?fmtInt(n):''}
+function pfHas(k){return !!S.pf[k]&&!S.pf[k].del}
+function pfEntry(k,s){const it=S.byKey.get(k),now=Date.now();return {at:now,upd:now,s:s?1:0,...(it?{t:it.t,p:it.p,ty:it.ty,id:it.id,d:it.d}:{})}}
 function pfToggle(k){
-  if(S.pf[k]) delete S.pf[k];
-  else {const it=S.byKey.get(k);S.pf[k]={at:Date.now(),s:0,...(it?{t:it.t,p:it.p,ty:it.ty,id:it.id,d:it.d}:{})}}
+  if(pfHas(k)) S.pf[k]={...S.pf[k],del:1,upd:Date.now()};
+  else S.pf[k]=pfEntry(k,0);
   pfSave();
 }
-function pfSeen(k){if(S.pf[k]){S.pf[k].s=S.pf[k].s?0:1;pfSave()}}
+function pfSeen(k){if(pfHas(k)){S.pf[k].s=S.pf[k].s?0:1;S.pf[k].upd=Date.now();pfSave()}}
 function pfItems(){
-  return Object.entries(S.pf).map(([k,v])=>{
+  return pfLive().map(([k,v])=>{
     const it=S.byKey.get(k);
     if(it) return Object.assign(it,{_at:v.at,_s:v.s});
     const [ty,id]=k.split(':');
     return {k,ty,id:+id,t:v.t||'Titolo non più in catalogo',p:v.p,d:v.d,c:[],pr:[],gone:1,_at:v.at,_s:v.s};
   });
 }
-function pfLink(){
-  const code=Object.entries(S.pf).map(([k,v])=>(k[0]==='m'?'m':'t')+k.split(':')[1]+(v.s?'v':'')).join('.');
-  return location.origin+location.pathname+'#pf='+code;
+function pfMerge(a,b){
+  const out={...a};
+  for(const [k,v] of Object.entries(b||{})){const o=out[k];if(!o||(v.upd||0)>(o.upd||0)) out[k]=v}
+  const cut=Date.now()-90*864e5;
+  for(const [k,v] of Object.entries(out)) if(v.del&&(v.upd||0)<cut) delete out[k];
+  return out;
 }
+const canon=o=>JSON.stringify(Object.keys(o).sort().map(k=>[k,o[k].upd||0,o[k].s||0,o[k].del||0]));
+
+// Vecchi link "#pf=" (versione precedente): ancora importabili
 function pfImportFromHash(){
   const m=location.hash.match(/^#pf=([mt0-9v.]+)$/); if(!m) return;
   const list=m[1].split('.').map(x=>x.match(/^([mt])(\d+)(v?)$/)).filter(Boolean);
   history.replaceState(null,'',location.pathname);
-  const nuovi=list.filter(x=>!S.pf[(x[1]==='m'?'movie':'tv')+':'+x[2]]).length;
-  const el=document.createElement('div');el.className='banner';
-  el.innerHTML=`Questo link contiene ${titoli(list.length)} di My Portfolio, ${nuovi===1?'1 nuovo':fmtInt(nuovi)+' nuovi'} per questo dispositivo. <span class="row" style="margin-top:8px"><button class="btn primary" type="button" id="doImport">Aggiungi a My Portfolio</button><button class="btn" type="button" id="noImport">Ignora</button></span>`;
-  $('#banners').prepend(el);
-  el.querySelector('#noImport').onclick=()=>el.remove();
-  el.querySelector('#doImport').onclick=()=>{
-    for(const x of list){const k=(x[1]==='m'?'movie':'tv')+':'+x[2];const it=S.byKey.get(k);
-      if(!S.pf[k]) S.pf[k]={at:Date.now(),s:x[3]?1:0,...(it?{t:it.t,p:it.p,ty:it.ty,id:it.id,d:it.d}:{})};
-      else if(x[3]) S.pf[k].s=1;}
-    pfSave();el.textContent=nuovi===1?'Aggiunto 1 titolo a My Portfolio.':`Aggiunti ${fmtInt(nuovi)} titoli a My Portfolio.`;setView('pf');
-  };
+  for(const x of list){const k=(x[1]==='m'?'movie':'tv')+':'+x[2];
+    if(!pfHas(k)) S.pf[k]=pfEntry(k,x[3]); else if(x[3]&&!S.pf[k].s){S.pf[k].s=1;S.pf[k].upd=Date.now()}}
+  pfSave();banner(`Aggiunti a My Portfolio i titoli del link (${titoli(list.length)}).`);setView('pf');
 }
+
+// ---------- Sincronizzazione automatica: un Gist privato sul tuo account GitHub ----------
+const GIST_FILE='guida-streaming-portfolio.json';
+const SY={cfg:store.get('gs:sync',null),busy:false,again:false,timer:null,last:null,err:null,form:false,link:false};
+const b64e=s=>btoa(unescape(encodeURIComponent(s))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+const b64d=s=>decodeURIComponent(escape(atob(s.replace(/-/g,'+').replace(/_/g,'/'))));
+
+async function gh(path,opt={}){
+  let r;
+  try{
+    r=await fetch('https://api.github.com'+path,{...opt,cache:'no-store',headers:{Accept:'application/vnd.github+json',
+      Authorization:'Bearer '+SY.cfg.token,'X-GitHub-Api-Version':'2022-11-28',...(opt.body?{'Content-Type':'application/json'}:{})}});
+  }catch{throw Object.assign(new Error('Nessuna connessione: sincronizzo appena torni online.'),{status:0})}
+  if(r.ok) return r.json();
+  const msg=r.status===401?'La chiave GitHub non è valida o è scaduta. Disattiva e riattiva la sincronizzazione con una chiave nuova.'
+    :r.status===403?'La chiave GitHub non ha il permesso "Gists: Read and write".'
+    :r.status===404?'Gist non trovato.'
+    :`GitHub ha risposto ${r.status}. Riprovo alla prossima modifica.`;
+  throw Object.assign(new Error(msg),{status:r.status});
+}
+async function syncFindOrCreate(){
+  for(let page=1;page<=10;page++){
+    const list=await gh(`/gists?per_page=100&page=${page}`);
+    const g=list.find(x=>x.files&&x.files[GIST_FILE]); if(g) return g.id;
+    if(list.length<100) break;
+  }
+  const g=await gh('/gists',{method:'POST',body:JSON.stringify({description:'Guida Streaming · My Portfolio',public:false,
+    files:{[GIST_FILE]:{content:JSON.stringify({v:1,pf:{}})}}})});
+  return g.id;
+}
+async function syncRead(){
+  const g=await gh('/gists/'+SY.cfg.gist), f=g.files&&g.files[GIST_FILE];
+  if(!f) return {};
+  let txt=f.content;
+  if(f.truncated) txt=await (await fetch(f.raw_url,{cache:'no-store'})).text();
+  try{return JSON.parse(txt).pf||{}}catch{return {}}
+}
+async function syncNow(){
+  if(!SY.cfg) return;
+  if(SY.busy){SY.again=true;return}
+  SY.busy=true;SY.again=false;renderSync();
+  try{
+    if(!SY.cfg.gist){SY.cfg.gist=await syncFindOrCreate();store.set('gs:sync',SY.cfg)}
+    let remote;
+    try{remote=await syncRead()}
+    catch(e){if(e.status!==404) throw e; SY.cfg.gist=await syncFindOrCreate();store.set('gs:sync',SY.cfg);remote=await syncRead()}
+    const merged=pfMerge(S.pf,remote);
+    if(canon(merged)!==canon(remote))
+      await gh('/gists/'+SY.cfg.gist,{method:'PATCH',body:JSON.stringify({files:{[GIST_FILE]:{content:JSON.stringify({v:1,updated:new Date().toISOString(),pf:merged})}}})});
+    if(canon(merged)!==canon(S.pf)){S.pf=merged;store.set('gs:pf',S.pf);pfCount();if(S.data)render()}
+    SY.last=new Date();SY.err=null;
+  }catch(e){SY.err=e.message}
+  finally{SY.busy=false;renderSync();if(SY.again) syncNow()}
+}
+function syncSoon(){if(!SY.cfg)return;clearTimeout(SY.timer);SY.timer=setTimeout(syncNow,1200)}
+function syncDeviceLink(){return location.origin+location.pathname+'#sync='+b64e(JSON.stringify({t:SY.cfg.token,g:SY.cfg.gist}))}
+function syncFromHash(){
+  const m=location.hash.match(/^#sync=([A-Za-z0-9_-]+)$/); if(!m) return false;
+  history.replaceState(null,'',location.pathname);
+  try{const o=JSON.parse(b64d(m[1]));if(!o.t) throw 0;SY.cfg={token:o.t,gist:o.g||null};store.set('gs:sync',SY.cfg)}
+  catch{banner('Il link di collegamento non è valido. Creane uno nuovo dal dispositivo già collegato.');return false}
+  banner('Sincronizzazione attivata su questo dispositivo: My Portfolio ora è lo stesso ovunque.');
+  return true;
+}
+function renderSync(){
+  const box=$('#syncBox'); if(!box) return;
+  if(!SY.cfg){
+    box.innerHTML=SY.form?`<b>Attiva la sincronizzazione</b>
+      <span class="y">My Portfolio verrà salvato in un Gist privato sul tuo account GitHub. Serve una chiave, da creare una volta sola:</span>
+      <ol class="steps">
+        <li>Apri <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">github.com/settings/personal-access-tokens/new</a></li>
+        <li><b>Token name</b>: Guida Streaming. <b>Expiration</b>: la più lunga disponibile.</li>
+        <li>In <b>Permissions</b>, nella parte <b>Account</b>, aggiungi <b>Gists</b> con accesso <b>Read and write</b>. Non serve altro.</li>
+        <li>Tocca <b>Generate token</b>, copia la chiave e incollala qui sotto.</li>
+      </ol>
+      <input id="ghToken" type="password" autocomplete="off" spellcheck="false" placeholder="github_pat_…" aria-label="Chiave GitHub">
+      <div class="row"><button class="btn primary" type="button" id="syncOn">Attiva</button><button class="btn" type="button" id="syncCancel">Annulla</button></div>
+      ${SY.err?`<span class="err">${esc(SY.err)}</span>`:''}`
+    :`<div class="row"><b>Sincronizzazione tra dispositivi</b><span class="y">Ora My Portfolio è salvato solo in questo browser.</span></div>
+      <div class="row"><button class="btn primary" type="button" id="syncSetup">Attiva sincronizzazione</button></div>`;
+    return;
+  }
+  const st=SY.busy?'Sincronizzo…':SY.err?'':SY.last?`Sincronizzato alle ${SY.last.toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})}`:'In attesa…';
+  box.innerHTML=`<div class="row"><b><span class="dotok${SY.err?' ko':''}" aria-hidden="true"></span>Sincronizzazione attiva</b><span class="y">${st}</span></div>
+    ${SY.err?`<span class="err">${esc(SY.err)}</span>`:''}
+    <div class="row"><button class="btn" type="button" id="syncNowBtn">Sincronizza ora</button><button class="btn" type="button" id="syncLinkBtn">Collega un altro dispositivo</button><button class="btn" type="button" id="syncOff">Disattiva qui</button></div>
+    ${SY.link?`<div class="linkbox"><span class="y">Apri questo link sul nuovo dispositivo, una volta sola. Contiene la tua chiave: non condividerlo con altri.</span>
+      <input id="devLink" readonly value="${esc(syncDeviceLink())}" aria-label="Link per collegare un dispositivo">
+      <div class="row"><button class="btn primary" type="button" id="copyDev">Copia link</button><span class="y" id="copyMsg"></span></div></div>`:''}`;
+}
+async function syncActivate(token){
+  SY.cfg={token,gist:null};SY.err=null;
+  await syncNow();
+  if(SY.err&&!SY.cfg.gist){
+    if(/non è valida/.test(SY.err)) SY.err='GitHub non riconosce questa chiave. Controlla di averla copiata per intero, poi riprova.';
+    SY.cfg=null;SY.form=true;renderSync();return}
+  store.set('gs:sync',SY.cfg);SY.form=false;renderSync();
+}
+document.addEventListener('visibilitychange',()=>{if(!document.hidden) syncNow()});
+window.addEventListener('online',()=>syncNow());
+
 function setView(v){
-  S.view=v;S.shown.clear();
+  S.view=v;S.shown.clear();SY.link=false;
   $('#views').querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.view===v));
-  $('#provRow').hidden=v==='pf';$('#pfBar').hidden=v!=='pf';$('#linkBox').hidden=true;
+  $('#provRow').hidden=v==='pf';$('#pfBar').hidden=v!=='pf';renderSync();
   render();
 }
 
@@ -259,7 +364,8 @@ async function load(){
     const when=new Date(d.generatedAt);
     $('#sub').textContent=`Cataloghi italiani di film e serie con i voti di IMDb e Rotten Tomatoes · aggiornato ${when.toLocaleDateString('it-IT',{day:'numeric',month:'long'})} alle ${when.toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})}`;
     if(d.ratings&&d.ratings.pending>0) banner(`I voti di ${fmtInt(d.ratings.pending)} titoli arriveranno nei prossimi aggiornamenti notturni.`);
-    pfLoad(); pfCount(); $('#views').hidden=false; $('#bar').hidden=false; renderChips(); pfImportFromHash(); render();
+    pfLoad(); pfCount(); $('#views').hidden=false; $('#bar').hidden=false; renderChips();
+    const linked=syncFromHash(); pfImportFromHash(); renderSync(); render(); if(linked) setView('pf'); syncNow();
   }catch{ $('#status').textContent='Non riesco a caricare il catalogo. Controlla la connessione e ricarica la pagina.' }
 }
 
@@ -368,10 +474,16 @@ document.addEventListener('click',e=>{
   }
   if(t.dataset.seen){pfSeen(t.dataset.seen);const it=S.byKey.get(t.dataset.seen)||pfItems().find(x=>x.k===t.dataset.seen);if(it)renderDetailActions(it);refreshSaveButtons(t.dataset.seen);return}
   if(t.dataset.view){setView(t.dataset.view);return}
-  if(t.id==='makeLink'){$('#syncLink').value=pfLink();$('#linkBox').hidden=false;return}
-  if(t.id==='copyLink'){const v=$('#syncLink').value;
-    navigator.clipboard?.writeText(v).then(()=>{$('#copyMsg').textContent='Link copiato. Aprilo sull\'altro dispositivo per aggiungere i titoli.'},
-      ()=>{$('#syncLink').select();$('#copyMsg').textContent='Seleziona e copia il link a mano.'}) ?? $('#syncLink').select();return}
+  if(t.id==='syncSetup'){SY.form=true;SY.err=null;renderSync();$('#ghToken')?.focus();return}
+  if(t.id==='syncCancel'){SY.form=false;SY.err=null;renderSync();return}
+  if(t.id==='syncOn'){const v=$('#ghToken').value.trim();if(!v){$('#ghToken').focus();return}t.disabled=true;t.textContent='Collego…';syncActivate(v);return}
+  if(t.id==='syncNowBtn'){syncNow();return}
+  if(t.id==='syncLinkBtn'){SY.link=!SY.link;renderSync();return}
+  if(t.id==='syncOff'){SY.cfg=null;SY.link=false;SY.err=null;try{localStorage.removeItem('gs:sync')}catch{};renderSync();return}
+  if(t.id==='copyDev'){const v=$('#devLink').value;
+    const sel=()=>{$('#devLink').select();$('#copyMsg').textContent='Seleziona e copia il link a mano.'};
+    if(navigator.clipboard) navigator.clipboard.writeText(v).then(()=>{$('#copyMsg').textContent='Link copiato.'},sel); else sel();
+    return}
   if(t.dataset.prov){const id=+t.dataset.prov;S.sel.has(id)?S.sel.delete(id):S.sel.add(id);store.set('gs:sel',[...S.sel]);S.shown.clear();renderChips();render()}
   else if(t.dataset.cat){S.cat=t.dataset.cat;S.shown.clear();renderChips();render()}
   else if(t.dataset.more){S.shown.set(t.dataset.more,(S.shown.get(t.dataset.more)||STEP)+MORE);render()}
