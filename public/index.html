@@ -80,6 +80,14 @@ section.group h2 .n{font:500 12px var(--f-mono);color:var(--muted)}
 .sc.rt{color:#fff}
 .sc.rt.fresh{background:var(--fresh)} .sc.rt.rotten{background:var(--rotten)}
 .sc.wait{background:var(--chip);color:var(--muted);font-weight:500}
+.sc.mine{background:var(--accent);color:var(--accent-ink)}
+.vote{display:grid;gap:8px;border-top:1px solid var(--line);padding-top:12px}
+.vote .head{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.vote .nums{display:grid;grid-template-columns:repeat(10,minmax(0,1fr));gap:4px}
+.vote .nums button{height:38px;border-radius:8px;border:1px solid var(--line);background:var(--surface);font:700 14px var(--f-mono);cursor:pointer;padding:0;font-variant-numeric:tabular-nums}
+.vote .nums button.in{background:var(--chip)}
+.vote .nums button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.vote .clear{background:none;border:0;color:var(--muted);text-decoration:underline;cursor:pointer;font-size:13px;padding:0}
 .sc small{font:600 9px var(--f-body);letter-spacing:.04em;opacity:.85}
 .provs{display:flex;gap:3px}
 .provs img{width:16px;height:16px;border-radius:4px}
@@ -159,6 +167,7 @@ dialog::backdrop{background:rgb(0 0 0 / .5)}
         <option value="new">Uscite recenti</option>
         <option value="imdb">Voto IMDb</option>
         <option value="rt">Rotten Tomatoes</option>
+        <option value="mine">Il mio voto</option>
       </select>
       <label class="range">IMDb min <input type="range" id="minImdb" min="0" max="9" step="0.5" value="0"><output id="minOut">—</output></label>
       <input type="search" id="q" placeholder="Cerca titolo" aria-label="Cerca titolo">
@@ -216,6 +225,14 @@ function pfToggle(k){
   else S.pf[k]=pfEntry(k,0);
   pfSave();
 }
+// Il mio voto (1–10): salvato nella voce del portfolio, quindi si sincronizza con lei. Votare segna anche come visto.
+function myVote(it){return pfHas(it.k)?S.pf[it.k].v??null:null}
+function pfVote(k,v){
+  if(!pfHas(k)) return;
+  const e=S.pf[k];
+  if(v){e.v=v;e.s=1}else delete e.v;
+  e.upd=Date.now();pfSave();
+}
 function pfSeen(k){if(pfHas(k)){S.pf[k].s=S.pf[k].s?0:1;S.pf[k].upd=Date.now();pfSave()}}
 function pfItems(){
   return pfLive().map(([k,v])=>{
@@ -232,7 +249,7 @@ function pfMerge(a,b){
   for(const [k,v] of Object.entries(out)) if(v.del&&(v.upd||0)<cut) delete out[k];
   return out;
 }
-const canon=o=>JSON.stringify(Object.keys(o).sort().map(k=>[k,o[k].upd||0,o[k].s||0,o[k].del||0]));
+const canon=o=>JSON.stringify(Object.keys(o).sort().map(k=>[k,o[k].upd||0,o[k].s||0,o[k].del||0,o[k].v||0]));
 
 // Vecchi link "#pf=" (versione precedente): ancora importabili
 function pfImportFromHash(){
@@ -370,11 +387,12 @@ async function load(){
 }
 
 function scoresHTML(it,big){
-  let h='';
+  const mv=myVote(it);
+  let h=mv?`<span class="sc mine" title="Il mio voto"><small>Tu</small>${mv}</span>`:'';
   if(it.im!=null) h+=`<span class="sc imdb"><small>IMDb</small>${it.im.toFixed(1)}</span>`;
   if(it.rt!=null) h+=`<span class="sc rt ${it.rt>=60?'fresh':'rotten'}" title="Tomatometer"><small>RT</small>${it.rt}%</span>`;
   if(big&&it.mc!=null) h+=`<span class="sc wait"><small>Metascore</small>${it.mc}</span>`;
-  return h||`<span class="sc wait">${it.ii&&!it.nr?'voti in arrivo':'nessun voto'}</span>`;
+  return (it.im!=null||it.rt!=null||(big&&it.mc!=null))?h:h+`<span class="sc wait">${it.ii&&!it.nr?'voti in arrivo':'nessun voto'}</span>`;
 }
 function provImgs(it,max){return it.pr.map(id=>S.prov.get(id)).filter(Boolean).slice(0,max)
   .map(p=>`<img src="${IMG}w45${p.logo}" alt="${esc(p.name)}" title="${esc(p.name)}" loading="lazy">`).join('')}
@@ -398,7 +416,8 @@ function visible(){
     if(q&&!it.t.toLowerCase().includes(q)&&!(it.o||'').toLowerCase().includes(q)) return false;
     return true});
   const n=(v)=>v==null?-1:v;
-  if(S.sort==='imdb') arr.sort((a,b)=>n(b.im)-n(a.im)||n(b.iv)-n(a.iv));
+  if(S.sort==='mine') arr.sort((a,b)=>n(myVote(b))-n(myVote(a))||n(b.im)-n(a.im));
+  else if(S.sort==='imdb') arr.sort((a,b)=>n(b.im)-n(a.im)||n(b.iv)-n(a.iv));
   else if(S.sort==='rt') arr.sort((a,b)=>n(b.rt)-n(a.rt)||n(b.im)-n(a.im));
   else if(S.sort==='new') arr.sort((a,b)=>(b.d||'').localeCompare(a.d||''));
   else if(pf) arr.sort((a,b)=>b._at-a._at);
@@ -437,7 +456,7 @@ function openDetail(it){
     <div style="display:grid;gap:10px;align-content:start">
       <h3>${esc(it.t)}</h3>
       <div class="meta">${it.ty==='movie'?'Film':'Serie TV'}${it.d?' · '+it.d.slice(0,4):''}${it.o?' · '+esc(it.o):''}</div>
-      ${it.gone?'':`<div class="big">${scoresHTML(it,true)}</div>`}
+      <div class="big" id="detScores">${detScores(it)}</div>
       ${it.iv?`<div class="meta">${fmtInt(it.iv)} voti su IMDb</div>`:''}
     </div></div>
     <div class="meta"><b>Su:</b> ${esc(provs)||'—'}<br><b>Categorie:</b> ${esc(cats)||'—'}</div>
@@ -447,13 +466,23 @@ function openDetail(it){
       ${it.ii?`<a href="https://www.imdb.com/title/${it.ii}/" target="_blank" rel="noopener">IMDb</a>`:''}
       <a href="https://www.rottentomatoes.com/search?search=${encodeURIComponent(it.o||it.t)}" target="_blank" rel="noopener">Rotten Tomatoes</a>
     </div>
+    <div id="detVote"></div>
     <div class="actions" id="detActions"></div>`;
   renderDetailActions(it);
   $('#detail').showModal();
   loadTrama(it).then(t=>{const el=$('#trama');if(el)el.innerHTML=t?esc(t):'<span class="meta">Trama non disponibile in italiano.</span>'});
 }
+function detScores(it){
+  if(!it.gone) return scoresHTML(it,true);
+  const mv=myVote(it); return mv?`<span class="sc mine" title="Il mio voto"><small>Tu</small>${mv}</span>`:'';
+}
 function renderDetailActions(it){
-  const on=pfHas(it.k), seen=on&&S.pf[it.k].s;
+  const on=pfHas(it.k), seen=on&&S.pf[it.k].s, mv=myVote(it);
+  $('#detVote').innerHTML=on?`<div class="vote" role="group" aria-label="Il mio voto">
+      <div class="head"><b>Il mio voto</b><span class="y">${mv?`${mv} su 10`:'Tocca un numero da 1 a 10'}</span>${mv?`<button class="clear" type="button" data-vote="0" data-k="${it.k}">Togli il voto</button>`:''}</div>
+      <div class="nums">${Array.from({length:10},(_,i)=>i+1).map(n=>`<button type="button" class="${mv&&n<=mv?'in':''}" data-vote="${n}" data-k="${it.k}" aria-pressed="${mv===n}" aria-label="Voto ${n}">${n}</button>`).join('')}</div>
+    </div>`:'';
+  const sc=$('#detScores'); if(sc) sc.innerHTML=detScores(it);
   $('#detActions').innerHTML=`${on?`<button class="btn" type="button" data-seen="${it.k}">${seen?'Segna da vedere':'Segna come visto'}</button>`:''}
     <button class="btn${on?'':' primary'}" type="button" data-save="${it.k}" data-detail="1">${on?'Rimuovi da My Portfolio':'Aggiungi a My Portfolio'}</button>
     <button class="btn" type="button" data-close>Chiudi</button>`;
@@ -472,6 +501,8 @@ document.addEventListener('click',e=>{
     if(S.view==='pf'&&!t.dataset.detail) render(); else refreshSaveButtons(t.dataset.save);
     return;
   }
+  if(t.dataset.vote){const k=t.dataset.k;pfVote(k,+t.dataset.vote||0);
+    const it=S.byKey.get(k)||pfItems().find(x=>x.k===k);if(it)renderDetailActions(it);refreshSaveButtons(k);return}
   if(t.dataset.seen){pfSeen(t.dataset.seen);const it=S.byKey.get(t.dataset.seen)||pfItems().find(x=>x.k===t.dataset.seen);if(it)renderDetailActions(it);refreshSaveButtons(t.dataset.seen);return}
   if(t.dataset.view){setView(t.dataset.view);return}
   if(t.id==='syncSetup'){SY.form=true;SY.err=null;renderSync();$('#ghToken')?.focus();return}
