@@ -394,6 +394,19 @@ function idx(it){
   if(a==null&&b==null) return null;
   return Math.round(a==null?b:b==null?a:(a+b)/2);
 }
+// Colore della pastiglia: scala rosso → arancio → giallo → verde.
+// Quasi tutti i titoli stanno tra 40 e 90, quindi la scala copre quell'intervallo (sotto 40 rosso pieno, sopra 90 verde pieno).
+const IDX_STOPS=[[40,[200,40,30]],[55,[226,110,30]],[67,[232,188,40]],[78,[120,176,60]],[90,[34,139,58]]];
+function idxColor(x){
+  let c=IDX_STOPS[0][1];
+  if(x>=IDX_STOPS[IDX_STOPS.length-1][0]) c=IDX_STOPS[IDX_STOPS.length-1][1];
+  else for(let i=1;i<IDX_STOPS.length;i++){const [x1,c1]=IDX_STOPS[i-1],[x2,c2]=IDX_STOPS[i];
+    if(x<=x2){const t=Math.max(0,(x-x1)/(x2-x1));c=c1.map((v,j)=>Math.round(v+(c2[j]-v)*t));break}}
+  const lum=c.map(v=>{v/=255;return v<=0.03928?v/12.92:((v+0.055)/1.055)**2.4}).reduce((a,v,j)=>a+v*[0.2126,0.7152,0.0722][j],0);
+  // testo chiaro o scuro, quello con più contrasto
+  const white=1.05/(lum+0.05), dark=(lum+0.05)/0.0612;
+  return `background:rgb(${c.join(',')});color:${dark>=white?'#1b1a24':'#ffffff'}`;
+}
 function idxNote(it){
   const x=idx(it); if(x==null) return '';
   const im=it.im!=null?it.im.toLocaleString('it-IT',{minimumFractionDigits:1,maximumFractionDigits:1}):null;
@@ -403,7 +416,7 @@ function idxNote(it){
 function scoresHTML(it,big){
   const mv=myVote(it), x=idx(it);
   let h=mv?`<span class="sc mine" title="Il mio voto"><small>Tu</small>${mv}</span>`:'';
-  if(x!=null) h+=`<span class="sc idx" title="Indice IMDb + Rotten Tomatoes, da 0 a 100"><small>Indice</small>${x}</span>`;
+  if(x!=null) h+=`<span class="sc idx" style="${idxColor(x)}" title="Indice IMDb + Rotten Tomatoes, da 0 a 100"><small>Indice</small>${x}</span>`;
   if(it.im!=null) h+=`<span class="sc imdb"><small>IMDb</small>${it.im.toFixed(1)}</span>`;
   if(it.rt!=null) h+=`<span class="sc rt ${it.rt>=60?'fresh':'rotten'}" title="Tomatometer"><small>RT</small>${it.rt}%</span>`;
   if(big&&it.mc!=null) h+=`<span class="sc wait"><small>Metascore</small>${it.mc}</span>`;
