@@ -81,6 +81,7 @@ section.group h2 .n{font:500 12px var(--f-mono);color:var(--muted)}
 .sc.rt.fresh{background:var(--fresh)} .sc.rt.rotten{background:var(--rotten)}
 .sc.wait{background:var(--chip);color:var(--muted);font-weight:500}
 .sc.mine{background:var(--accent);color:var(--accent-ink)}
+.sc.idx{background:var(--ink);color:var(--bg)}
 .vote{display:grid;gap:8px;border-top:1px solid var(--line);padding-top:12px}
 .vote .head{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
 .vote .nums{display:grid;grid-template-columns:repeat(10,minmax(0,1fr));gap:4px}
@@ -165,6 +166,7 @@ dialog::backdrop{background:rgb(0 0 0 / .5)}
       <select id="sort" aria-label="Ordina">
         <option value="pop">Più visti / Aggiunti di recente</option>
         <option value="new">Uscite recenti</option>
+        <option value="idx">Indice IMDb + RT</option>
         <option value="imdb">Voto IMDb</option>
         <option value="rt">Rotten Tomatoes</option>
         <option value="mine">Il mio voto</option>
@@ -386,9 +388,22 @@ async function load(){
   }catch{ $('#status').textContent='Non riesco a caricare il catalogo. Controlla la connessione e ricarica la pagina.' }
 }
 
+// Indice 0–100: media tra IMDb ×10 e Tomatometer; con una sola fonte disponibile vale quella.
+function idx(it){
+  const a=it.im!=null?it.im*10:null, b=it.rt!=null?it.rt:null;
+  if(a==null&&b==null) return null;
+  return Math.round(a==null?b:b==null?a:(a+b)/2);
+}
+function idxNote(it){
+  const x=idx(it); if(x==null) return '';
+  const im=it.im!=null?it.im.toLocaleString('it-IT',{minimumFractionDigits:1,maximumFractionDigits:1}):null;
+  return `<div class="meta">Indice ${x} su 100: ${im!=null&&it.rt!=null?`media tra IMDb ${im} (${Math.round(it.im*10)}) e Rotten Tomatoes ${it.rt}%`
+    :im!=null?`solo IMDb ${im}, Rotten Tomatoes non ha un voto`:`solo Rotten Tomatoes ${it.rt}%, IMDb non ha un voto`}.</div>`;
+}
 function scoresHTML(it,big){
-  const mv=myVote(it);
+  const mv=myVote(it), x=idx(it);
   let h=mv?`<span class="sc mine" title="Il mio voto"><small>Tu</small>${mv}</span>`:'';
+  if(x!=null) h+=`<span class="sc idx" title="Indice IMDb + Rotten Tomatoes, da 0 a 100"><small>Indice</small>${x}</span>`;
   if(it.im!=null) h+=`<span class="sc imdb"><small>IMDb</small>${it.im.toFixed(1)}</span>`;
   if(it.rt!=null) h+=`<span class="sc rt ${it.rt>=60?'fresh':'rotten'}" title="Tomatometer"><small>RT</small>${it.rt}%</span>`;
   if(big&&it.mc!=null) h+=`<span class="sc wait"><small>Metascore</small>${it.mc}</span>`;
@@ -416,7 +431,8 @@ function visible(){
     if(q&&!it.t.toLowerCase().includes(q)&&!(it.o||'').toLowerCase().includes(q)) return false;
     return true});
   const n=(v)=>v==null?-1:v;
-  if(S.sort==='mine') arr.sort((a,b)=>n(myVote(b))-n(myVote(a))||n(b.im)-n(a.im));
+  if(S.sort==='idx') arr.sort((a,b)=>n(idx(b))-n(idx(a))||n(b.iv)-n(a.iv));
+  else if(S.sort==='mine') arr.sort((a,b)=>n(myVote(b))-n(myVote(a))||n(b.im)-n(a.im));
   else if(S.sort==='imdb') arr.sort((a,b)=>n(b.im)-n(a.im)||n(b.iv)-n(a.iv));
   else if(S.sort==='rt') arr.sort((a,b)=>n(b.rt)-n(a.rt)||n(b.im)-n(a.im));
   else if(S.sort==='new') arr.sort((a,b)=>(b.d||'').localeCompare(a.d||''));
@@ -457,6 +473,7 @@ function openDetail(it){
       <h3>${esc(it.t)}</h3>
       <div class="meta">${it.ty==='movie'?'Film':'Serie TV'}${it.d?' · '+it.d.slice(0,4):''}${it.o?' · '+esc(it.o):''}</div>
       <div class="big" id="detScores">${detScores(it)}</div>
+      ${it.gone?'':idxNote(it)}
       ${it.iv?`<div class="meta">${fmtInt(it.iv)} voti su IMDb</div>`:''}
     </div></div>
     <div class="meta"><b>Su:</b> ${esc(provs)||'—'}<br><b>Categorie:</b> ${esc(cats)||'—'}</div>
