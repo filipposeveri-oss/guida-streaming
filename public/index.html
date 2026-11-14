@@ -57,6 +57,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 .tools input[type=search],.tools select{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:6px 12px;font-size:13px;min-width:0}
 .tools input[type=search]{flex:1 1 180px}
 .range{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--muted)}
+.range output.on{border-radius:5px;padding:1px 6px;text-align:center;font-weight:700}
 .range output{font-family:var(--f-mono);color:var(--ink);min-width:2.4em}
 .status{font-size:13px;color:var(--muted);padding-block:10px;display:flex;gap:10px;flex-wrap:wrap;align-items:center}
 .banner{border:1px solid var(--accent);border-radius:12px;padding:10px 14px;font-size:14px;margin-top:10px;background:var(--surface)}
@@ -171,6 +172,7 @@ dialog::backdrop{background:rgb(0 0 0 / .5)}
         <option value="rt">Rotten Tomatoes</option>
         <option value="mine">Il mio voto</option>
       </select>
+      <label class="range">Indice min <input type="range" id="minIdx" min="0" max="90" step="5" value="0"><output id="minIdxOut">—</output></label>
       <label class="range">IMDb min <input type="range" id="minImdb" min="0" max="9" step="0.5" value="0"><output id="minOut">—</output></label>
       <input type="search" id="q" placeholder="Cerca titolo" aria-label="Cerca titolo">
     </div>
@@ -200,7 +202,7 @@ dialog::backdrop{background:rgb(0 0 0 / .5)}
 "use strict";
 const IMG='https://image.tmdb.org/t/p/';
 const S={data:null,items:[],prov:new Map(),cats:[],sel:new Set(),type:'all',cat:'all',group:'platform',sort:'pop',
-  minImdb:0,q:'',shown:new Map(),byKey:new Map(),trame:new Map(),view:'catalog',seen:'todo',pf:{}};
+  minImdb:0,minIdx:0,q:'',shown:new Map(),byKey:new Map(),trame:new Map(),view:'catalog',seen:'todo',pf:{}};
 const STEP=12, MORE=48, SHARDS=64;
 const store={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch{return d}},
              set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch{}}};
@@ -441,6 +443,7 @@ function visible(){
     if(S.type!=='all'&&it.ty!==S.type) return false;
     if(S.cat!=='all'&&!it.gone&&!it.c.includes(S.cat)) return false;
     if(S.minImdb>0&&!it.gone&&!(it.im>=S.minImdb)) return false;
+    if(S.minIdx>0&&!it.gone&&!(idx(it)>=S.minIdx)) return false;
     if(q&&!it.t.toLowerCase().includes(q)&&!(it.o||'').toLowerCase().includes(q)) return false;
     return true});
   const n=(v)=>v==null?-1:v;
@@ -562,6 +565,8 @@ function segBind(sel,key){$(sel).addEventListener('click',e=>{const b=e.target.c
   S[key]=b.dataset.v;S.shown.clear();$(sel).querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',x===b));render()})}
 segBind('#typeSeg','type'); segBind('#groupSeg','group'); segBind('#seenSeg','seen');
 $('#sort').addEventListener('change',e=>{S.sort=e.target.value;S.shown.clear();render()});
+$('#minIdx').addEventListener('input',e=>{S.minIdx=+e.target.value;S.shown.clear();const o=$('#minIdxOut');
+  o.textContent=S.minIdx||'—';o.className=S.minIdx?'on':'';o.style.cssText=S.minIdx?idxColor(S.minIdx):'';render()});
 $('#minImdb').addEventListener('input',e=>{S.minImdb=+e.target.value;S.shown.clear();$('#minOut').textContent=S.minImdb?S.minImdb.toFixed(1):'—';render()});
 let qT;$('#q').addEventListener('input',e=>{clearTimeout(qT);qT=setTimeout(()=>{S.q=e.target.value;S.shown.clear();render()},200)});
 load();
