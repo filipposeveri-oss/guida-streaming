@@ -29,7 +29,11 @@ export const config = {
   providerLimit: int(e.PROVIDER_LIMIT, 12),
   maxPages: int(e.MAX_PAGES, 500),        // pagine da 20 titoli per piattaforma e tipo; 500 = catalogo completo
   omdbDailyBudget: int(e.OMDB_DAILY_BUDGET, 900),
-  ratingTtlDays: int(e.RATING_TTL_DAYS, 30),
+  ratingTtlDays: int(e.RATING_TTL_DAYS, 30),        // ricontrollo dei titoli senza ID IMDb
+  // Ogni quanti giorni aggiornare un voto già scaricato, in base all'età del titolo
+  ratingTtlRecent: int(e.RATING_TTL_RECENT, 21),   // uscito nell'ultimo anno
+  ratingTtlMid: int(e.RATING_TTL_MID, 60),         // da 1 a 3 anni
+  ratingTtlOld: int(e.RATING_TTL_OLD, 180),        // più vecchio
   dataDir: path.resolve(ROOT, e.DATA_DIR || 'data'),
   publicDir: path.resolve(ROOT, e.PUBLIC_DIR || 'public'),
   port: int(e.PORT, 8080),

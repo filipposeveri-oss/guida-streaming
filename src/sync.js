@@ -154,15 +154,23 @@ async function enrichRatings(items, cache) {
     } catch { /* riprova al prossimo giro */ }
   });
 
-  // 2) Voti via OMDb, entro il budget giornaliero
+  // 2) Voti via OMDb, entro il budget giornaliero.
+  // Prima i titoli mai votati, poi gli aggiornamenti. Un voto si aggiorna tanto più spesso quanto più il titolo è recente,
+  // perché i voti dei titoli vecchi cambiano poco: così il budget non finisce tutto in aggiornamenti.
   if (!config.omdbKey) { log('OMDB_KEY assente: salto i voti IMDb e Rotten Tomatoes'); return { fetched: 0, pending: 0 }; }
-  const needVotes = ordered.filter((it) => {
-    const c = cache[it.key];
-    return c?.imdbId && (!c.ratedAt || now - c.ratedAt > ttl);
-  });
+  const refreshEvery = (it) => {
+    const age = it.date ? (now - Date.parse(it.date)) / DAY : 0;
+    if (!(age > 365)) return config.ratingTtlRecent * DAY;    // uscito nell'ultimo anno (o data sconosciuta)
+    if (age <= 3 * 365) return config.ratingTtlMid * DAY;     // da 1 a 3 anni
+    return config.ratingTtlOld * DAY;                         // più vecchio
+  };
+  const withId = ordered.filter((it) => cache[it.key]?.imdbId);
+  const missing = withId.filter((it) => !cache[it.key].ratedAt);
+  const stale = withId.filter((it) => cache[it.key].ratedAt && now - cache[it.key].ratedAt > refreshEvery(it))
+    .sort((a, b) => cache[a.key].ratedAt - cache[b.key].ratedAt);
   const budget = Math.max(0, config.omdbDailyBudget - cache._usage.omdb);
-  const batch = needVotes.slice(0, budget);
-  log(`Voti da aggiornare: ${needVotes.length}, budget OMDb oggi: ${budget}`);
+  const batch = [...missing, ...stale].slice(0, budget);
+  log(`Voti mancanti: ${missing.length}, da aggiornare: ${stale.length}, budget OMDb oggi: ${budget}`);
 
   let stop = null, fetched = 0;
   await pool(batch, 4, async (it) => {
@@ -199,7 +207,8 @@ async function enrichRatings(items, cache) {
     // Niente altre chiamate oggi: evita di sprecare richieste se il server riparte
     if (/limite/i.test(stop)) cache._usage.omdb = Math.max(cache._usage.omdb, config.omdbDailyBudget);
   }
-  return { fetched, pending: needVotes.length - fetched, stop };
+  const pending = missing.filter((it) => !cache[it.key].ratedAt).length;
+  return { fetched, pending, stop };
 }
 
 // ---------- esecuzione ----------
@@ -245,7 +254,7 @@ export async function runSync() {
   await writeJSONAtomic(outFile, out);
   const withVotes = out.items.filter((x) => x.im != null).length;
   log(`Fatto in ${((Date.now() - t0) / 1000).toFixed(1)}s: ${out.items.length} titoli, ${withVotes} con voto IMDb, ` +
-      `${r.fetched} voti scaricati ora, ${r.pending} in attesa`);
+      `${r.fetched} voti scaricati ora, ${r.pending} titoli ancora senza voto`);
   return out;
 }
 

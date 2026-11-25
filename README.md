@@ -9,7 +9,7 @@ Chi apre il sito non deve inserire chiavi: un processo notturno scarica i dati e
 1. **Piattaforme**: la lista delle piattaforme attive in Italia arriva da TMDB, con i dati di disponibilità forniti da JustWatch. Di default vengono scelte le 12 principali.
 2. **Catalogo**: per ogni piattaforma e tipo (film o serie) viene scaricato l'intero catalogo disponibile in Italia, ordinato per popolarità. TMDB arriva fino a 10.000 titoli per lista. Le trame sono divise in piccoli file separati (`trame/`), che il sito scarica solo quando apri una scheda.
 3. **Categorie**: i generi TMDB di film e serie vengono riuniti in 16 categorie italiane, definite in `src/categories.js`.
-4. **Voti**: per ogni titolo si ricava l'ID IMDb da TMDB e poi si interroga OMDb, che restituisce il voto IMDb, il Tomatometer di Rotten Tomatoes e il Metascore. Un voto già scaricato viene aggiornato solo dopo 30 giorni.
+4. **Voti**: per ogni titolo si ricava l'ID IMDb da TMDB e poi si interroga OMDb, che restituisce il voto IMDb, il Tomatometer di Rotten Tomatoes e il Metascore. I titoli mai votati hanno la precedenza. Un voto già scaricato si aggiorna ogni 21 giorni per i titoli usciti nell'ultimo anno, ogni 60 per quelli da 1 a 3 anni e ogni 180 per quelli più vecchi, i cui voti cambiano poco.
 5. **Budget OMDb**: il piano free di OMDb consente 1.000 richieste al giorno. Il sync ne usa al massimo 900 e dà precedenza ai titoli più visti. Con il catalogo completo i voti dei titoli più visti arrivano nelle prime notti, mentre quelli dell'intero archivio richiedono alcune settimane. Il sito mostra quanti titoli sono ancora in attesa. Con la chiave OMDb a pagamento (Patreon, da 1 $/mese) basta alzare `OMDB_DAILY_BUDGET`.
 
 ## Chiavi necessarie (gratuite)
